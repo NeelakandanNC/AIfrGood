@@ -148,7 +148,10 @@ export default function PatientForm() {
               options={SYMPTOM_LIST}
               value={form.symptoms}
               onChange={set('symptoms')}
-              renderTags={(val, getTagProps) => val.map((v, i) => <Chip key={v} label={v} size="small" {...getTagProps({ index: i })} />)}
+              renderTags={(val, getTagProps) => val.map((v, i) => {
+                const { key, ...tagProps } = getTagProps({ index: i });
+                return <Chip key={key} label={v} size="small" {...tagProps} />;
+              })}
               renderInput={(params) => <TextField {...params} label="Symptoms" placeholder="Select symptoms" />}
             />
           </Grid>
@@ -158,7 +161,10 @@ export default function PatientForm() {
               options={CONDITION_LIST}
               value={form.conditions}
               onChange={set('conditions')}
-              renderTags={(val, getTagProps) => val.map((v, i) => <Chip key={v} label={v} size="small" {...getTagProps({ index: i })} />)}
+              renderTags={(val, getTagProps) => val.map((v, i) => {
+                const { key, ...tagProps } = getTagProps({ index: i });
+                return <Chip key={key} label={v} size="small" {...tagProps} />;
+              })}
               renderInput={(params) => <TextField {...params} label="Pre-existing Conditions" placeholder="Select conditions" />}
             />
           </Grid>

@@ -62,7 +62,7 @@ export default function SpecialistCard({ specialist, delay = 0 }) {
 
         <Collapse in={expanded}>
           <Box sx={{ mt: 2 }}>
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+            <Typography variant="body2" color="text.primary" display="block" sx={{ mb: 1 }}>
               {d.assessment}
             </Typography>
 
@@ -97,7 +97,7 @@ export default function SpecialistCard({ specialist, delay = 0 }) {
                       <TableRow key={i}>
                         <TableCell>{w.test}</TableCell>
                         <TableCell><PriorityBadge priority={w.priority} /></TableCell>
-                        <TableCell><Typography variant="caption">{w.rationale}</Typography></TableCell>
+                        <TableCell><Typography variant="body2">{w.rationale}</Typography></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

@@ -1,16 +1,9 @@
 
 
-import os
 from google.adk.agents import LlmAgent
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
-
-
-# ============================================================
-# CONFIG
-# ============================================================
-
-MODEL_NAME = "gemini-2.5-flash-lite"
+from app.config import get_model
 
 
 # ============================================================
@@ -216,7 +209,7 @@ class SpecialistOutput(BaseModel):
 
 cardiology_llm_agent = LlmAgent(
     name="CardiologySpecialist",
-    model=MODEL_NAME,
+    model=get_model(),
     instruction="""
 
 Here is the patient data for your evaluation:

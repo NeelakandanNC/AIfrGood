@@ -11,17 +11,10 @@ This agent does NOT diagnose. It risk-stratifies and flags
 neurological concerns that a solo junior doctor might miss.
 """
 
-import os
 from google.adk.agents import LlmAgent
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
-
-
-# ============================================================
-# CONFIG
-# ============================================================
-
-MODEL_NAME = "gemini-2.5-flash-lite"
+from app.config import get_model
 
 
 # ============================================================
@@ -228,7 +221,7 @@ class SpecialistOutput(BaseModel):
 
 neurology_llm_agent = LlmAgent(
     name="NeurologySpecialist",
-    model=MODEL_NAME,
+    model=get_model(),
     instruction="""You are a senior consultant neurologist with 20+ years of experience
 at a high-volume Indian neurosciences centre — the kind of neurologist who has
 managed thousands of stroke codes, watched subtle seizures that the ER missed,

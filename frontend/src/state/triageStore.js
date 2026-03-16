@@ -11,9 +11,14 @@ const useTriageStore = create((set) => ({
   sessionId: null,
   patientData: null,
 
+  // Auth state
+  token: localStorage.getItem('token') || null,
+  doctor: JSON.parse(localStorage.getItem('doctor') || 'null'),
+
   setClassification: (c) => set({ classification: c }),
   addSpecialist: (s) =>
     set((st) => ({ specialists: [...st.specialists, s] })),
+  setSpecialists: (arr) => set({ specialists: arr }),
   setOtherSpecialty: (o) => set({ otherSpecialty: o }),
   setVerdict: (v) => set({ verdict: v }),
   addStreamEvent: (e) =>
@@ -22,6 +27,17 @@ const useTriageStore = create((set) => ({
   setIsTriaging: (b) => set({ isTriaging: b }),
   setSessionId: (id) => set({ sessionId: id }),
   setPatientData: (d) => set({ patientData: d }),
+
+  setAuth: (token, doctor) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('doctor', JSON.stringify(doctor));
+    set({ token, doctor });
+  },
+  logout: () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('doctor');
+    set({ token: null, doctor: null });
+  },
 
   reset: () =>
     set({

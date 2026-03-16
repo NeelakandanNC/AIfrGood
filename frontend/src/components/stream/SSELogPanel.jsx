@@ -1,101 +1,176 @@
 import { useEffect, useRef } from 'react';
-import { Box, Typography, Button, Paper } from '@mui/material';
+import {
+  Dialog, DialogContent, Box, Typography, Button, LinearProgress, Chip,
+} from '@mui/material';
+import {
+  CheckCircle, ErrorOutline, AutoAwesome,
+  RadioButtonUnchecked, TrackChanges, MedicalServices,
+  Apartment, Gavel, TaskAlt, Cancel,
+} from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import useTriageStore from '../../state/triageStore';
 
-const EVENT_ICONS = {
-  status: '\u2139\uFE0F',
-  classification: '\uD83C\uDFAF',
-  specialist: '\uD83E\uDE7A',
-  other: '\uD83C\uDFE5',
-  verdict: '\u2696\uFE0F',
-  complete: '\u2705',
-  error: '\u274C',
+const EVENT_META = {
+  status:         { icon: RadioButtonUnchecked, color: '#94A3B8' },
+  classification: { icon: TrackChanges,         color: '#94A3B8' },
+  specialist:     { icon: MedicalServices,       color: '#94A3B8' },
+  other:          { icon: Apartment,             color: '#94A3B8' },
+  verdict:        { icon: Gavel,                 color: '#94A3B8' },
+  complete:       { icon: TaskAlt,               color: '#6EE7B7' },
+  error:          { icon: Cancel,                color: '#FCA5A5' },
 };
 
-const EVENT_COLORS = {
-  status: '#90CAF9',
-  classification: '#CE93D8',
-  specialist: '#80CBC4',
-  other: '#FFB74D',
-  verdict: '#FFF176',
-  complete: '#A5D6A7',
-  error: '#EF9A9A',
+const PHASE_LABELS = {
+  init:           'Initialising pipeline',
+  ingest:         'Processing patient data',
+  classification: 'Running risk classification',
+  specialist:     'Consulting specialist council',
+  cmo:            'CMO synthesising verdict',
+  complete:       'Triage complete',
+  error:          'Error occurred',
 };
 
 export default function SSELogPanel() {
-  const { streamEvents, phase } = useTriageStore();
+  const { streamEvents, phase, isTriaging } = useTriageStore();
   const navigate = useNavigate();
   const bottomRef = useRef(null);
+
+  const isOpen  = isTriaging || phase === 'complete' || phase === 'error';
+  const isDone  = phase === 'complete';
+  const isError = phase === 'error';
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [streamEvents]);
 
-  const formatTime = (ts) => {
-    const d = new Date(ts);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  };
+  useEffect(() => {
+    if (isDone) {
+      const t = setTimeout(() => navigate('/result'), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [isDone, navigate]);
 
   return (
-    <Paper
-      sx={{
-        bgcolor: '#1A1A2E', borderRadius: 3, p: 2, height: '100%',
-        minHeight: 400, display: 'flex', flexDirection: 'column',
+    <Dialog
+      open={isOpen}
+      maxWidth="sm"
+      fullWidth
+      disableEscapeKeyDown
+      PaperProps={{
+        sx: {
+          bgcolor: '#0D1117',
+          border: '1px solid #21262D',
+          borderRadius: 2,
+          overflow: 'hidden',
+          boxShadow: '0 24px 48px rgba(0,0,0,0.6)',
+        },
       }}
     >
-      <Typography variant="subtitle2" sx={{ color: '#90CAF9', mb: 1, fontFamily: 'monospace' }}>
-        Live Pipeline Stream
-      </Typography>
-
-      <Box sx={{ flex: 1, overflow: 'auto', fontFamily: 'monospace', fontSize: 13 }}>
-        {streamEvents.length === 0 && (
-          <Typography
-            sx={{
-              color: '#555',
-              textAlign: 'center',
-              mt: 8,
-              animation: phase === 'idle' ? 'pulse-critical 2s infinite' : 'none',
-            }}
-          >
-            Waiting for patient data...
-          </Typography>
+      {/* Header */}
+      <Box sx={{ px: 3, py: 2, borderBottom: '1px solid #21262D', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <AutoAwesome sx={{ color: '#58A6FF', fontSize: 16 }} />
+        <Typography sx={{ color: '#E6EDF3', fontWeight: 600, fontSize: 14, flex: 1, letterSpacing: 0.2 }}>
+          AI Triage Pipeline
+        </Typography>
+        {!isDone && !isError && (
+          <Chip
+            label={PHASE_LABELS[phase] || 'Processing'}
+            size="small"
+            sx={{ bgcolor: '#161B22', color: '#8B949E', fontSize: 11, border: '1px solid #30363D', height: 22 }}
+          />
         )}
-
-        {streamEvents.map((evt, i) => (
-          <Box
-            key={i}
-            className="fade-in"
-            sx={{ py: 0.5, borderBottom: '1px solid #2A2A3E' }}
-          >
-            <Typography component="span" sx={{ color: '#666', fontSize: 11, mr: 1 }}>
-              {formatTime(evt.ts)}
-            </Typography>
-            <Typography component="span" sx={{ mr: 1 }}>
-              {EVENT_ICONS[evt.type] || '\u25CF'}
-            </Typography>
-            <Typography component="span" sx={{ color: EVENT_COLORS[evt.type] || '#CCC' }}>
-              {evt.message}
-            </Typography>
-          </Box>
-        ))}
-        <div ref={bottomRef} />
+        {isDone  && <CheckCircle  sx={{ color: '#3FB950', fontSize: 18 }} />}
+        {isError && <ErrorOutline sx={{ color: '#F85149', fontSize: 18 }} />}
       </Box>
 
-      {phase === 'complete' && (
-        <Box sx={{ mt: 2, textAlign: 'center' }}>
-          <Typography sx={{ color: '#A5D6A7', mb: 1, fontWeight: 600 }}>
-            Triage Complete
-          </Typography>
-          <Button
-            variant="contained"
-            onClick={() => navigate('/result')}
-            sx={{ fontWeight: 600 }}
-          >
-            View Full Report &rarr;
-          </Button>
-        </Box>
+      {/* Progress bar */}
+      {!isDone && !isError && (
+        <LinearProgress
+          variant="indeterminate"
+          sx={{ height: 2, bgcolor: '#161B22', '& .MuiLinearProgress-bar': { bgcolor: '#58A6FF' } }}
+        />
       )}
-    </Paper>
+
+      <DialogContent sx={{ p: 0 }}>
+        {/* Event log */}
+        <Box
+          sx={{
+            maxHeight: 300,
+            overflowY: 'auto',
+            px: 3,
+            py: 2,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 0.5,
+            '&::-webkit-scrollbar': { width: 4 },
+            '&::-webkit-scrollbar-track': { bgcolor: 'transparent' },
+            '&::-webkit-scrollbar-thumb': { bgcolor: '#30363D', borderRadius: 2 },
+          }}
+        >
+          {streamEvents.length === 0 && (
+            <Typography sx={{ color: '#484F58', fontSize: 13, textAlign: 'center', mt: 3, fontFamily: 'monospace' }}>
+              Connecting...
+            </Typography>
+          )}
+
+          {streamEvents.map((evt, i) => {
+            const meta = EVENT_META[evt.type] || EVENT_META.status;
+            const Icon = meta.icon;
+            const isLast = i === streamEvents.length - 1;
+            return (
+              <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, py: 0.4 }}>
+                {isLast
+                  ? <Icon sx={{ fontSize: 14, color: meta.color, mt: '3px', flexShrink: 0 }} />
+                  : <CheckCircle sx={{ fontSize: 14, color: '#3FB950', mt: '3px', flexShrink: 0 }} />
+                }
+                <Typography
+                  sx={{
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                    fontFamily: 'monospace',
+                    color: '#C9D1D9',
+                    letterSpacing: 0.1,
+                  }}
+                >
+                  {evt.message}
+                </Typography>
+              </Box>
+            );
+          })}
+          <div ref={bottomRef} />
+        </Box>
+
+        {/* Footer */}
+        {(isDone || isError) && (
+          <Box sx={{ px: 3, py: 2, borderTop: '1px solid #21262D', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
+            {isDone && (
+              <>
+                <Typography sx={{ color: '#8B949E', fontSize: 12 }}>
+                  Redirecting automatically...
+                </Typography>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={() => navigate('/result')}
+                  sx={{ bgcolor: '#238636', '&:hover': { bgcolor: '#2EA043' }, fontWeight: 600, fontSize: 13 }}
+                >
+                  View Report
+                </Button>
+              </>
+            )}
+            {isError && (
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => window.location.reload()}
+                sx={{ borderColor: '#F85149', color: '#F85149', '&:hover': { borderColor: '#FF7B72', color: '#FF7B72', bgcolor: 'transparent' } }}
+              >
+                Dismiss
+              </Button>
+            )}
+          </Box>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

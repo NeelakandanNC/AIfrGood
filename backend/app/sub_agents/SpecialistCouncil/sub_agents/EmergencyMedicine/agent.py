@@ -11,17 +11,10 @@ This agent does NOT diagnose. It prioritizes threats,
 detects instability, and flags time-critical dangers.
 """
 
-import os
 from google.adk.agents import LlmAgent
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
-
-
-# ============================================================
-# CONFIG
-# ============================================================
-
-MODEL_NAME = "gemini-2.5-flash-lite"
+from app.config import get_model
 
 
 # ============================================================
@@ -79,7 +72,7 @@ class SpecialistOutput(BaseModel):
 
 emergency_llm_agent = LlmAgent(
     name="EmergencyMedicineSpecialist",
-    model=MODEL_NAME,
+    model=get_model(),
     instruction="""
 You are a senior Emergency Medicine consultant with 20+ years of experience
 in high-volume Indian emergency departments.

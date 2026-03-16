@@ -1,12 +1,7 @@
-import os
 from google.adk.agents import LlmAgent
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
-
-# ============================================================
-# CONFIG
-# ============================================================
-MODEL_NAME = "gemini-2.5-flash-lite"
+from app.config import get_model
 
 # ============================================================
 # OUTPUT SCHEMA (The Target Format)
@@ -30,7 +25,7 @@ class StructuredPatientData(BaseModel):
 # ============================================================
 IngestAgent = LlmAgent(
     name="DataIngestAgent",
-    model=MODEL_NAME,
+    model=get_model(),
     instruction="""
     You are a meticulous Clinical Data Coordinator in a high-pressure District Hospital.
     Your task is to convert raw, unstructured triage data into a clean, validated JSON schema.

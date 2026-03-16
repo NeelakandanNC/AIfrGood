@@ -1,4 +1,4 @@
-import { Box, Typography, Chip, Stack, Card, CardContent, LinearProgress, Grid } from '@mui/material';
+import { Box, Typography, Chip, Stack, Card, CardContent, LinearProgress } from '@mui/material';
 import useTriageStore from '../state/triageStore';
 import RiskBadge from '../components/common/RiskBadge';
 import CouncilRadar from '../components/council/CouncilRadar';
@@ -49,13 +49,11 @@ export default function CouncilPage() {
       <CouncilRadar specialists={specialists} />
 
       {/* Specialist Grid */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3 }}>
         {specialists.map((s, i) => (
-          <Grid size={{ xs: 12, sm: 6, md: 4 }} key={s.specialty || i}>
-            <SpecialistCard specialist={s} delay={i * 100} />
-          </Grid>
+          <SpecialistCard key={s.specialty || i} specialist={s} delay={i * 100} />
         ))}
-      </Grid>
+      </Box>
 
       {/* Other Departments */}
       {otherSpecialty?.departments?.length > 0 && (
@@ -63,12 +61,12 @@ export default function CouncilPage() {
           <CardContent>
             <Typography variant="subtitle2" gutterBottom>Other Department Scores</Typography>
             {[...otherSpecialty.departments]
-              .filter((d) => d.relevance > 0)
+              .filter((d) => d.relevance >= 3)
               .sort((a, b) => b.relevance - a.relevance)
               .map((d) => (
-                <Box key={d.name} sx={{ mb: 1 }}>
+                <Box key={d.department} sx={{ mb: 1 }}>
                   <Stack direction="row" justifyContent="space-between">
-                    <Typography variant="body2">{d.name}</Typography>
+                    <Typography variant="body2">{d.department}</Typography>
                     <Typography variant="caption">{d.relevance}/10</Typography>
                   </Stack>
                   <LinearProgress

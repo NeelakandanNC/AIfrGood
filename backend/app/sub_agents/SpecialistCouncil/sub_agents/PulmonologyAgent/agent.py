@@ -11,17 +11,10 @@ This agent does NOT diagnose. It risk-stratifies and flags
 respiratory concerns that a solo junior doctor might miss.
 """
 
-import os
 from google.adk.agents import LlmAgent
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
-
-
-# ============================================================
-# CONFIG
-# ============================================================
-
-MODEL_NAME = "gemini-2.5-flash-lite"
+from app.config import get_model
 
 
 # ============================================================
@@ -227,7 +220,7 @@ class SpecialistOutput(BaseModel):
 
 pulmonology_llm_agent = LlmAgent(
     name="PulmonologySpecialist",
-    model=MODEL_NAME,
+    model=get_model(),
     instruction="""You are a senior consultant pulmonologist / chest physician with 20+ years
 of experience at a high-volume Indian government hospital. You have managed
 everything from massive hemoptysis in TB patients, to silent hypoxia in COVID

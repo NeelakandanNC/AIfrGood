@@ -43,7 +43,9 @@ export default function CouncilSummary({ verdict }) {
                   <TableCell>{s.relevance_score}/10</TableCell>
                   <TableCell>{s.urgency_score}/10</TableCell>
                   <TableCell>{s.confidence}</TableCell>
-                  <TableCell><Typography variant="caption">{s.one_liner}</Typography></TableCell>
+                  <TableCell sx={{ whiteSpace: 'normal', minWidth: 200 }}>
+                    <Typography variant="caption">{s.one_liner}</Typography>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

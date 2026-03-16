@@ -1,16 +1,111 @@
-# React + Vite
+# Ydhya — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite clinical dashboard for the Ydhya AI triage system. Doctors use this to intake patients, monitor the live AI pipeline, review results, add clinical notes, download PDF handover reports, and explore platform information.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Pages
 
-## React Compiler
+| Route | Page | Description |
+|-------|------|-------------|
+| `/login` | LoginPage | Register / login. JWT stored in `localStorage` |
+| `/` | TriagePage | Patient intake form → starts triage → live SSE log panel |
+| `/result` | ResultPage | Full AI verdict — risk, priority score, safety alerts, workup table, council summary, department routing. Download PDF + save doctor's notes |
+| `/council` | CouncilPage | Radar chart + expandable specialist cards with scores, flags, and differentials |
+| `/queue` | QueuePage | Priority-sorted table of all active patients with risk/department/alert filters |
+| `/analytics` | AnalyticsPage | Stat cards, risk distribution pie, department load bar chart, trend lines, alert frequency |
+| `/quick-triage` | QuickTriagePage | Offline ML-only classification for rapid screening (no LLM) |
+| `/about` | AboutPage | Platform overview — pipeline explanation, features, audience benefits, tech stack |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## State (`src/state/triageStore.js` — Zustand)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+| Key | Description |
+|-----|-------------|
+| `sessionId` | Active triage session ID |
+| `verdict` | Enriched CMO verdict object |
+| `classification` | XGBoost classification result |
+| `specialists` | Array of full specialist opinions |
+| `otherSpecialty` | Other-specialty relevance scores |
+| `patientData` | Patient vitals and demographics |
+| `streamEvents` | SSE log event history |
+| `phase` | Pipeline phase (`idle` / `running` / `done`) |
+| `token` | JWT token (persisted in `localStorage`) |
+| `doctor` | Logged-in doctor profile |
+
+---
+
+## API Layer
+
+### `src/api/triageApi.js`
+
+| Function | Description |
+|----------|-------------|
+| `startTriage(data)` | `POST /api/triage` — converts temperature F→C before sending |
+| `connectSSE(sessionId, handlers)` | Opens `EventSource` for live pipeline events |
+| `getPatients()` | `GET /api/dashboard/patients` |
+| `getStats()` | `GET /api/dashboard/stats` |
+| `dischargePatient(id)` | `DELETE /api/patients/{id}` |
+| `getDoctorNotes(id)` | `GET /api/patients/{id}/notes` |
+| `saveDoctorNotes(id, notes)` | `POST /api/patients/{id}/notes` |
+| `downloadReport(id)` | `GET /api/patients/{id}/report.pdf` — returns Blob |
+
+### `src/api/quickTriageApi.js`
+
+| Function | Description |
+|----------|-------------|
+| `runQuickTriage(data)` | `POST` to the ML-only server on port `8001` — instant classification without LLM |
+
+---
+
+## Component Structure
+
+```
+src/components/
+├── common/
+│   ├── RiskBadge.jsx          # Colour-coded risk chip (Low / Medium / High)
+│   ├── PriorityBadge.jsx      # Priority status chip
+│   ├── PriorityCircle.jsx     # Circular priority score (0–100)
+│   ├── ActionChip.jsx         # Recommended action chip
+│   └── FlagChip.jsx           # Red / yellow / info flag chip
+├── intake/
+│   ├── PatientForm.jsx        # Demographics + vitals form
+│   └── DocumentUpload.jsx     # Drag-and-drop document upload
+├── stream/
+│   └── SSELogPanel.jsx        # Dark terminal-style live pipeline log
+├── result/
+│   ├── VerdictHeader.jsx      # Risk banner + priority circle
+│   ├── SafetyAlerts.jsx       # CRITICAL / WARNING alert list
+│   ├── ExplanationCard.jsx    # CMO reasoning + key factors
+│   ├── WorkupTable.jsx        # Ordered investigations by priority
+│   ├── DepartmentRouting.jsx  # Primary + secondary departments
+│   ├── CouncilSummary.jsx     # Specialist opinion summary table
+│   └── OtherDepartments.jsx   # Additional flagged departments
+└── council/
+    ├── SpecialistCard.jsx     # Expandable specialist opinion card
+    ├── ConsensusBar.jsx       # Council consensus visualisation
+    └── CouncilRadar.jsx       # Radar chart of specialist scores
+```
+
+---
+
+## Setup
+
+```bash
+cd frontend
+npm install
+npm run dev       # http://localhost:5173
+```
+
+Requires the backend running on `localhost:8000`. Vite proxies all `/api` requests there automatically.
+
+---
+
+## Design System
+
+- **Component library**: Material UI v5
+- **Theme**: `src/theme.js` — primary `#1565C0`, secondary `#00897B`, background `#F5F6FA`
+- **Typography**: Inter / Roboto, heading weights 700–800
+- **Cards**: `borderRadius: 12px`, soft shadow `0 2px 8px rgba(0,0,0,0.08)`
+- **Sidebar**: Collapses to 60px icons-only, expands to 220px on hover

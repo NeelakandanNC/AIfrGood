@@ -1,113 +1,180 @@
-# TriageAI Backend
+# Ydhya — Backend
 
-The **TriageAI Backend** is a sophisticated multi-agent system designed to act as an AI-powered triage assistant for district hospitals. It combines traditional machine learning (XGBoost) for rapid risk stratification with a council of specialized Large Language Model (LLM) agents to provide clinical reasoning, differential diagnosis, and a final synthesized management plan.
+The Ydhya backend is an AI-powered clinical triage engine for emergency departments. It combines an XGBoost ML classifier with a council of specialised LLM agents (via Google ADK) to produce structured clinical verdicts, and exposes a FastAPI server with JWT auth, SQLite persistence, SSE streaming, and ReportLab PDF generation.
 
-## 🏗️ System Architecture
+---
 
-The backend operates as a **Sequential Agent Pipeline** orchestrated by the Google Agent Development Kit (ADK). The pipeline consists of three main stages:
+## System Architecture
 
-### 1. Classification Agent (The "Triage Nurse")
-*   **Location**: `app/sub_agents/ClassificationAgent`
-*   **Type**: Pure Python Code Agent (Deterministic)
-*   **Role**: Rapidly assesses patient vitals and symptoms.
-*   **Mechanism**:
-    *   Loads a pre-trained **XGBoost Classifier** (`model/model.pkl`) to predict risk levels (Low, Medium, High).
-    *   Computes deterministic **derived metrics** like Vital Severity Score and Comorbidity Risk.
-    *   **Output**: A structured `classification_result` object containing the risk profile and raw patient data.
+### Agent Pipeline
 
-### 2. Specialist Council (The "Medical Board")
-*   **Location**: `app/sub_agents/SpecialistCouncil`
-*   **Type**: Parallel Workgroup of LLM Agents
-*   **Role**: Provides deep domain-specific analysis.
-*   **Mechanism**:
-    *   Runs **6 Specialist Agents** concurrently:
-        *   🫀 **Cardiology Agent**
-        *   🧠 **Neurology Agent**
-        *   🫁 **Pulmonology Agent**
-        *   🚑 **Emergency Medicine Agent**
-        *   🩺 **General Medicine Agent**
-        *   🏥 **Other Specialty Agent** (scans for 13+ other departments like Orthopedics, OB/GYN)
-    *   Each agent analyzes the patient data through its specific clinical lens and outputs a structured opinion with relevance scores, urgency scores, and specific red flags.
-
-### 3. Chief Medical Officer (CMO) Agent (The "Decision Maker")
-*   **Location**: `app/sub_agents/CMOAgent`
-*   **Type**: Meta-Reasoner LLM Agent
-*   **Role**: **"The Final Verdict"**
-*   **Mechanism**:
-    *   Does **not** look at raw patient data directly.
-    *   **Synthesizes** the opinions from the Specialist Council.
-    *   Resolves conflicts (e.g., Cardiology says "Urgent" vs. General Medicine says "Routine").
-    *   Produces the **CMOVerdict**: A production-ready, highly structured JSON output containing the final risk level, routing decision, safety alerts, and a consolidated workup plan.
-
-## 📂 Directory Structure
-
-```graphql
-backend/
-├── app/
-│   ├── agent.py                # Root Agent definition (Sequential Pipeline)
-│   └── sub_agents/
-│       ├── ClassificationAgent/ # XGBoost integration & vital scoring
-│       ├── SpecialistCouncil/   # Parallel orchestration of specialists
-│       │   └── sub_agents/      # Individual specialist agent definitions
-│       └── CMOAgent/            # Final synthesis & decision making logic
-├── data/                       # Static data resources
-├── model/                      # Machine Learning artifacts
-│   ├── model.pkl               # Trained XGBoost model
-│   ├── label_encoder.pkl       # Label encoder for risk classes
-│   └── test_model.py           # Script to test ML predictions independently
-├── main.py                     # CLI Entry point & standard Runner setup
-└── requirements.txt            # Python dependencies
+```
+Patient Input → ClassificationAgent → SpecialistCouncil (Parallel) → CMOAgent → Verdict
 ```
 
-## 🚀 Getting Started
+| Stage | Agent | Type | Role |
+|-------|-------|------|------|
+| 1 | **ClassificationAgent** | XGBoost ML | Predicts Low / Medium / High risk from vitals + comorbidities |
+| 2 | **SpecialistCouncil** | Parallel LLM group | 6 specialists evaluate concurrently — Cardiology, Neurology, Pulmonology, Emergency Medicine, General Medicine, Other Specialty |
+| 3 | **CMOAgent** | Meta-reasoner LLM | Synthesises council opinions, resolves conflicts, produces final structured verdict |
+
+### Post-Processing (`server.py`)
+
+After the ADK pipeline completes, the server enriches the raw CMO output with:
+- Consolidated workup (deduped, sorted by STAT → URGENT → ROUTINE)
+- Safety alerts (RED_FLAG → CRITICAL, YELLOW_FLAG → WARNING)
+- Specialist summaries and council consensus label
+- Priority score (0–100)
+- Dissenting opinions and secondary department flags
+
+---
+
+## Directory Structure
+
+```
+backend/
+├── server.py                   # FastAPI app — CORS, auth, routes, SSE, PDF
+├── auth.py                     # JWT creation, verification, bcrypt hashing
+├── db.py                       # SQLite helpers (doctors, patients, notes)
+├── no_llm_server.py            # Lightweight server (ML-only, no LLM)
+├── app/
+│   ├── agent.py                # Root SequentialAgent
+│   ├── config.py               # Gemini model config (get_model())
+│   └── sub_agents/
+│       ├── ClassificationAgent/
+│       ├── IngestAgent/
+│       ├── CMOAgent/
+│       └── SpecialistCouncil/
+│           └── sub_agents/
+│               ├── CardiologyAgent/
+│               ├── NeurologyAgent/
+│               ├── PulmonologyAgent/
+│               ├── EmergencyMedicine/
+│               ├── GeneralMedicine/
+│               └── OtherSpecialityAgent/
+├── services/
+│   ├── ml_classifier.py        # XGBoost inference wrapper
+│   └── pdf_generator.py        # ReportLab clinical handover PDF
+├── model/
+│   ├── model.pkl               # Trained XGBoost classifier
+│   └── label_encoder.pkl       # Risk-level label encoder
+├── triage.db                   # SQLite database (auto-created on startup)
+└── .env                        # Secrets (not committed)
+```
+
+---
+
+## Setup
 
 ### Prerequisites
 
-*   Python 3.10+
-*   Google Cloud Project with Vertex AI enabled OR Google AI Studio API Key.
+- Python 3.10+
+- Google AI Studio API key (`GOOGLE_API_KEY`)
 
 ### Installation
 
-1.  **Navigate to the backend folder**:
-    ```bash
-    cd backend
-    ```
-
-2.  **Install dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3.  **Set up Environment Variables**:
-    Create a `.env` file in the `backend/` directory:
-    ```env
-    GOOGLE_API_KEY=your_api_key_here
-    # OR for Vertex AI
-    GOOGLE_CLOUD_PROJECT=your_project_id
-    GOOGLE_CLOUD_LOCATION=us-central1
-    ```
-
-### Running the Application
-
-To run the full triage pipeline with a sample patient:
-
 ```bash
-python main.py
+cd backend
+pip install fastapi uvicorn google-adk python-dotenv pydantic \
+            xgboost scikit-learn reportlab bcrypt python-jose
 ```
 
-This will:
-1.  Initialize the agents.
-2.  Inject sample patient data (defined in `main.py`).
-3.  Run the Classification → Specialist → CMO pipeline.
-4.  Print the final **CMOVerdict** JSON to the console.
+### Environment Variables
 
-## 🧠 Model & AI Details
+Create `backend/.env`:
 
-*   **ML Model**: XGBoost Classifier trained on a proprietary triage dataset. It predicts the base risk level.
-*   **LLMs**: The system uses **Gemini 2.5 Flash** (or Pro) for the specialist and CMO agents to ensure high-reasoning capabilities with low latency.
-*   **Safety**: The CMO agent implements a "Worst-Case Principle" — if *any* credible specialist raises a critical red flag, the final verdict is escalated regardless of the ML model's base prediction.
+```env
+GOOGLE_API_KEY=your_google_ai_studio_key
+JWT_SECRET=any_random_secret_string
+```
 
-## 🛠️ Customization
+### Run
 
-*   **New Specialists**: Add a new agent in `app/sub_agents/SpecialistCouncil/sub_agents/` and register it in `SpecialistCouncil/agent.py`.
-*   **Tuning the CMO**: Modify the `CMOAgent` instructions in `app/sub_agents/CMOAgent/agent.py` to adjust its risk tolerance or decision logic.
+```bash
+uvicorn server:app --reload --port 8000
+```
+
+The SQLite database (`triage.db`) is created automatically on first startup.
+
+---
+
+## API Reference
+
+### Auth
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register a new doctor account |
+| POST | `/api/auth/login` | Login — returns JWT + doctor profile |
+
+### Triage
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/triage` | Start triage session — returns `{ session_id }` |
+| GET | `/api/triage/stream/{session_id}` | SSE stream — events: `status`, `classification_result`, `specialist_opinion`, `cmo_verdict`, `complete`, `error` |
+
+### Dashboard
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/dashboard/patients` | All active patients for the logged-in doctor |
+| GET | `/api/dashboard/stats` | Aggregate stats (risk distribution, dept load, alert counts) |
+
+### Patient Actions *(JWT required)*
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| DELETE | `/api/patients/{session_id}` | Discharge patient |
+| GET | `/api/patients/{session_id}/notes` | Fetch saved doctor's notes |
+| POST | `/api/patients/{session_id}/notes` | Save doctor's notes |
+| GET | `/api/patients/{session_id}/report.pdf` | Download PDF clinical handover report |
+
+---
+
+## PDF Report
+
+Generated with **ReportLab** (`services/pdf_generator.py`). Sections:
+
+1. Header — system name, timestamp, confidentiality notice
+2. Patient details + vitals (temperature in °F)
+3. Risk assessment strip (colour-coded: High=red, Medium=orange, Low=green)
+4. CMO verdict — explanation, key factors, council consensus, confidence
+5. Safety alerts — CRITICAL (red) and WARNING (orange)
+6. Workup recommendations table — Test / Priority / Ordered By / Rationale (full text, auto-wrapping rows)
+7. Specialist council summary table (full one-liner, auto-wrapping rows)
+8. Doctor's notes — rendered only if notes have been saved
+
+---
+
+## Database Schema
+
+```sql
+CREATE TABLE doctors (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    username   TEXT UNIQUE NOT NULL,
+    password   TEXT NOT NULL,       -- bcrypt hash
+    name       TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE patients (
+    session_id     TEXT PRIMARY KEY,
+    doctor_id      INTEGER NOT NULL REFERENCES doctors(id),
+    patient_data   TEXT NOT NULL,   -- JSON
+    classification TEXT,            -- JSON
+    verdict        TEXT,            -- JSON (enriched CMO verdict)
+    doctor_notes   TEXT,            -- JSON
+    status         TEXT DEFAULT 'active',
+    timestamp      TEXT NOT NULL
+);
+```
+
+---
+
+## AI Details
+
+- **ML Model**: XGBoost Classifier — predicts Low / Medium / High risk from vitals and comorbidities
+- **LLM**: `gemini-2.0-flash` for all specialist and CMO agents
+- **Safety principle**: CMO applies a worst-case escalation rule — any credible RED_FLAG from any specialist overrides a lower ML risk prediction
+- **Agent framework**: Google ADK (`SequentialAgent` → `ParallelAgent` → `LlmAgent`)

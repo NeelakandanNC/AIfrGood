@@ -4,8 +4,8 @@ import uuid
 import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
+from fastapi.responses import StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, List, Any
@@ -15,6 +15,8 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 from app.agent import root_agent
+import db
+from auth import hash_password, verify_password, create_token, get_current_doctor
 
 
 # ─────────────────────────────────────────
@@ -25,6 +27,8 @@ load_dotenv()
 
 if not os.getenv("GOOGLE_API_KEY"):
     raise RuntimeError("GOOGLE_API_KEY is not set")
+if not os.getenv("JWT_SECRET"):
+    raise RuntimeError("JWT_SECRET is not set")
 
 
 # ─────────────────────────────────────────
@@ -40,6 +44,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup():
+    db.init_db()
 
 
 # ─────────────────────────────────────────
@@ -58,16 +67,14 @@ runner = Runner(
 
 
 # ─────────────────────────────────────────
-# In-Memory Patient Store
+# In-Memory Session Tracking (ADK user_id mapping)
 # ─────────────────────────────────────────
 
-patients_store: List[Dict[str, Any]] = []
-# Maps session_id -> {user_id, patient_data, status}
 active_sessions: Dict[str, Dict[str, Any]] = {}
 
 
 # ─────────────────────────────────────────
-# Request Models
+# Request / Response Models
 # ─────────────────────────────────────────
 
 class PatientData(BaseModel):
@@ -82,6 +89,49 @@ class PatientData(BaseModel):
     temperature: float  # Celsius from frontend
     spo2: int
     conditions: List[str]
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    name: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class DoctorNotesRequest(BaseModel):
+    doctor_name: str
+    clinical_impression: str
+    suggestions: str
+
+
+# ─────────────────────────────────────────
+# Auth Endpoints
+# ─────────────────────────────────────────
+
+@app.post("/api/auth/register")
+async def register(req: RegisterRequest):
+    existing = db.get_doctor_by_username(req.username)
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already taken")
+    hashed = hash_password(req.password)
+    doctor_id = db.create_doctor(req.username, hashed, req.name)
+    return {"message": "Doctor registered", "doctor_id": doctor_id}
+
+
+@app.post("/api/auth/login")
+async def login(req: LoginRequest):
+    doctor = db.get_doctor_by_username(req.username)
+    if not doctor or not verify_password(req.password, doctor["password"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = create_token(doctor["id"])
+    return {
+        "access_token": token,
+        "doctor": {"id": doctor["id"], "name": doctor["name"], "username": doctor["username"]},
+    }
 
 
 # ─────────────────────────────────────────
@@ -212,7 +262,7 @@ def compute_council_consensus(state: Dict, cmo_verdict: Dict) -> str:
             elif not rec:
                 agree_count += 1
         else:
-            agree_count += 1  # Not claiming = not disagreeing
+            agree_count += 1
     if total == 0:
         return "Unknown"
     ratio = agree_count / total
@@ -274,6 +324,19 @@ def enrich_verdict(state: Dict) -> Dict:
     cmo = _to_dict(state.get("cmo_verdict")) or {}
     classification = _to_dict(state.get("classification_result")) or {}
 
+    # Store full specialist opinions so they survive DB round-trips
+    full_opinions = []
+    for key, name in SPECIALIST_KEYS:
+        opinion = _to_dict(state.get(key))
+        if opinion:
+            full_opinions.append({"specialty": name, "data": opinion})
+    cmo["full_specialist_opinions"] = full_opinions
+
+    # Store other specialty opinion
+    other = _to_dict(state.get("other_specialty_opinion"))
+    if other:
+        cmo["other_specialty_raw"] = other
+
     cmo["specialist_summaries"] = compute_specialist_summaries(state)
     cmo["consolidated_workup"] = compute_consolidated_workup(state)
     cmo["safety_alerts"] = compute_safety_alerts(state)
@@ -334,11 +397,11 @@ def sse_event(event_type: str, data: Any) -> str:
 
 
 # ─────────────────────────────────────────
-# Endpoints
+# Triage Endpoints
 # ─────────────────────────────────────────
 
 @app.post("/api/triage")
-async def start_triage(patient: PatientData):
+async def start_triage(patient: PatientData, doctor_id: int = Depends(get_current_doctor)):
     session_id = str(uuid.uuid4())
     user_id = f"user_{uuid.uuid4().hex[:8]}"
 
@@ -351,6 +414,7 @@ async def start_triage(patient: PatientData):
 
     active_sessions[session_id] = {
         "user_id": user_id,
+        "doctor_id": doctor_id,
         "patient_data": patient.model_dump(),  # Keep original Celsius for frontend
         "status": "pending",
     }
@@ -359,10 +423,18 @@ async def start_triage(patient: PatientData):
 
 
 @app.get("/api/triage/stream/{session_id}")
-async def stream_triage(session_id: str):
+async def stream_triage(session_id: str, token: Optional[str] = None, doctor_id: Optional[int] = None):
+    # EventSource can't send headers — accept token as query param too
+    if doctor_id is None:
+        if token is None:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        from auth import decode_token
+        doctor_id = decode_token(token)
     session_info = active_sessions.get(session_id)
     if not session_info:
         raise HTTPException(status_code=404, detail="Session not found")
+    if session_info["doctor_id"] != doctor_id:
+        raise HTTPException(status_code=403, detail="Not your session")
 
     user_id = session_info["user_id"]
 
@@ -374,8 +446,6 @@ async def stream_triage(session_id: str):
                 role="user",
                 parts=[types.Part(text="START_TRIAGE")],
             )
-
-            emitted_keys = set()
 
             async for event in runner.run_async(
                 user_id=user_id,
@@ -393,7 +463,6 @@ async def stream_triage(session_id: str):
                     "text": text[:200] if text else "",
                 })
 
-            # Pipeline complete — read session state and emit structured events
             session = await session_service.get_session(
                 app_name=APP_NAME,
                 user_id=user_id,
@@ -406,12 +475,10 @@ async def stream_triage(session_id: str):
 
             state = session.state
 
-            # Emit classification_result
             classification = _to_dict(state.get("classification_result"))
             if classification:
                 yield sse_event("classification_result", classification)
 
-            # Emit specialist opinions
             for key, name in SPECIALIST_KEYS:
                 opinion = _to_dict(state.get(key))
                 if opinion:
@@ -420,24 +487,23 @@ async def stream_triage(session_id: str):
                         "data": opinion,
                     })
 
-            # Emit other specialty scores
             other = _to_dict(state.get("other_specialty_opinion"))
             if other:
                 yield sse_event("other_specialty_scores", other)
 
-            # Emit enriched CMO verdict
             enriched = enrich_verdict(state)
             yield sse_event("cmo_verdict", enriched)
 
-            # Store in patients list
-            patient_entry = {
-                "session_id": session_id,
-                "patient_data": session_info["patient_data"],
-                "classification": classification,
-                "verdict": enriched,
-                "timestamp": datetime.now().isoformat(),
-            }
-            patients_store.append(patient_entry)
+            # Persist to SQLite
+            timestamp = datetime.now().isoformat()
+            db.save_patient(
+                session_id=session_id,
+                doctor_id=doctor_id,
+                patient_data=session_info["patient_data"],
+                classification=classification,
+                verdict=enriched,
+                timestamp=timestamp,
+            )
             active_sessions[session_id]["status"] = "completed"
 
             yield sse_event("complete", {"message": "Triage complete"})
@@ -461,12 +527,13 @@ async def stream_triage(session_id: str):
 # ─────────────────────────────────────────
 
 @app.get("/api/dashboard/patients")
-async def get_patients():
-    return patients_store
+async def get_patients(doctor_id: int = Depends(get_current_doctor)):
+    return db.get_patients_by_doctor(doctor_id)
 
 
 @app.get("/api/dashboard/stats")
-async def get_stats():
+async def get_stats(doctor_id: int = Depends(get_current_doctor)):
+    patients_store = db.get_patients_by_doctor(doctor_id)
     total = len(patients_store)
     if total == 0:
         return {
@@ -487,7 +554,7 @@ async def get_stats():
     referrals = 0
 
     for p in patients_store:
-        verdict = p.get("verdict", {})
+        verdict = p.get("verdict") or {}
 
         risk = verdict.get("final_risk_level", "Medium")
         risk_dist[risk] = risk_dist.get(risk, 0) + 1
@@ -520,6 +587,57 @@ async def get_stats():
         "departmentLoad": dept_load,
         "alertFrequency": alert_freq,
     }
+
+
+@app.delete("/api/patients/{session_id}")
+async def discharge_patient(session_id: str, doctor_id: int = Depends(get_current_doctor)):
+    success = db.discharge_patient(session_id, doctor_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Patient not found or already discharged")
+    return {"message": "Patient discharged"}
+
+
+@app.get("/api/patients/{session_id}/notes")
+async def get_notes(session_id: str, doctor_id: int = Depends(get_current_doctor)):
+    patient = db.get_patient_by_session(session_id, doctor_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return patient["doctor_notes"] or {}
+
+
+@app.post("/api/patients/{session_id}/notes")
+async def save_notes(session_id: str, req: DoctorNotesRequest, doctor_id: int = Depends(get_current_doctor)):
+    notes = {
+        "doctor_name": req.doctor_name,
+        "clinical_impression": req.clinical_impression,
+        "suggestions": req.suggestions,
+        "saved_at": datetime.now().isoformat(),
+    }
+    ok = db.save_doctor_notes(session_id, doctor_id, notes)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return {"message": "Notes saved"}
+
+
+@app.get("/api/patients/{session_id}/report.pdf")
+async def download_report(session_id: str, doctor_id: int = Depends(get_current_doctor)):
+    from services.pdf_generator import generate_pdf
+    patient = db.get_patient_by_session(session_id, doctor_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    pdf_bytes = generate_pdf(
+        patient_data=patient["patient_data"],
+        classification=patient["classification"] or {},
+        verdict=patient["verdict"] or {},
+        doctor_notes=patient["doctor_notes"],
+    )
+    name = (patient["patient_data"].get("name") or "patient").replace(" ", "_")
+    filename = f"triage_{name}_{session_id[:8]}.pdf"
+    return Response(
+        content=bytes(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ─────────────────────────────────────────

@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import {
   Box, Typography, Chip, Stack, ToggleButtonGroup, ToggleButton,
   FormControl, InputLabel, Select, MenuItem, FormControlLabel, Switch,
+  IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, Button,
 } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
-import { getPatients } from '../api/triageApi';
+import { ExitToApp } from '@mui/icons-material';
+import { getPatients, dischargePatient } from '../api/triageApi';
 import RiskBadge from '../components/common/RiskBadge';
 import ActionChip from '../components/common/ActionChip';
 import PriorityCircle from '../components/common/PriorityCircle';
@@ -17,8 +19,9 @@ export default function QueuePage() {
   const [riskFilter, setRiskFilter] = useState([]);
   const [deptFilter, setDeptFilter] = useState('');
   const [alertsOnly, setAlertsOnly] = useState(false);
+  const [confirmId, setConfirmId] = useState(null);
   const navigate = useNavigate();
-  const { setVerdict, setClassification, setPatientData } = useTriageStore();
+  const { setVerdict, setClassification, setPatientData, setSpecialists, setOtherSpecialty, setSessionId } = useTriageStore();
 
   useEffect(() => {
     getPatients()
@@ -50,6 +53,17 @@ export default function QueuePage() {
     _raw: p,
   }));
 
+  const handleDischarge = async (sessionId) => {
+    try {
+      await dischargePatient(sessionId);
+      setPatients((prev) => prev.filter((p) => p.session_id !== sessionId));
+    } catch {
+      // ignore
+    } finally {
+      setConfirmId(null);
+    }
+  };
+
   const columns = [
     {
       field: 'priority_score', headerName: 'Priority', width: 90,
@@ -73,13 +87,32 @@ export default function QueuePage() {
         : <Typography variant="caption" color="text.secondary">0</Typography>,
     },
     { field: 'timestamp', headerName: 'Time', width: 100 },
+    {
+      field: 'discharge', headerName: '', width: 60, sortable: false,
+      renderCell: (params) => (
+        <Tooltip title="Discharge patient">
+          <IconButton
+            size="small"
+            color="warning"
+            onClick={(e) => { e.stopPropagation(); setConfirmId(params.row.id); }}
+          >
+            <ExitToApp fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ),
+    },
   ];
 
   const handleRowClick = (params) => {
+    if (params.field === 'discharge') return;
     const raw = params.row._raw;
     if (raw.verdict) setVerdict(raw.verdict);
     if (raw.classification) setClassification(raw.classification);
     if (raw.patient_data) setPatientData(raw.patient_data);
+    // Restore council data so CouncilPage works after re-login
+    setSpecialists(raw.verdict?.full_specialist_opinions || []);
+    setOtherSpecialty(raw.verdict?.other_specialty_raw || null);
+    setSessionId(raw.session_id);
     navigate('/result');
   };
 
@@ -130,6 +163,19 @@ export default function QueuePage() {
           disableRowSelectionOnClick
         />
       )}
+
+      <Dialog open={!!confirmId} onClose={() => setConfirmId(null)}>
+        <DialogTitle>Discharge Patient?</DialogTitle>
+        <DialogContent>
+          <Typography>This will remove the patient from the active queue.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmId(null)}>Cancel</Button>
+          <Button variant="contained" color="warning" onClick={() => handleDischarge(confirmId)}>
+            Discharge
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

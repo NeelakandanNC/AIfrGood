@@ -14,17 +14,10 @@ effects, metabolic derangements, infectious etiologies, and the
 "doesn't fit any specialty neatly" patients.
 """
 
-import os
 from google.adk.agents import LlmAgent
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
-
-
-# ============================================================
-# CONFIG
-# ============================================================
-
-MODEL_NAME = "gemini-2.5-flash-lite"
+from app.config import get_model
 
 
 # ============================================================
@@ -227,7 +220,7 @@ class SpecialistOutput(BaseModel):
 
 general_medicine_llm_agent = LlmAgent(
     name="GeneralMedicineSpecialist",
-    model=MODEL_NAME,
+    model=get_model(),
     instruction="""You are a senior consultant in General Medicine / Internal Medicine
 with 20+ years at a busy Indian government hospital. You are the physician
 who sees EVERYTHING — the undifferentiated patient, the multi-system puzzle,

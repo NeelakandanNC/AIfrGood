@@ -1,6 +1,29 @@
 import axios from 'axios';
 
-const api = axios.create({ baseURL: '/api' });
+const API_BASE = (import.meta.env.VITE_API_URL || '') + '/api';
+const api = axios.create({ baseURL: API_BASE });
+
+// Attach token from store on every request
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// On 401, clear auth and redirect to login
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('doctor');
+      window.location.href = '/login';
+    }
+    return Promise.reject(err);
+  }
+);
 
 function fahrenheitToCelsius(f) {
   return ((f - 32) * 5) / 9;
@@ -16,7 +39,10 @@ export async function startTriage(patientData) {
 }
 
 export function connectSSE(sessionId, handlers) {
-  const es = new EventSource(`/api/triage/stream/${sessionId}`);
+  const token = localStorage.getItem('token');
+  // EventSource doesn't support custom headers — pass token as query param
+  const url = `${API_BASE}/triage/stream/${sessionId}?token=${encodeURIComponent(token || '')}`;
+  const es = new EventSource(url);
 
   const events = [
     'status',
@@ -62,4 +88,28 @@ export async function uploadDocument(file) {
   form.append('file', file);
   const { data } = await api.post('/upload/document', form);
   return data;
+}
+
+export async function dischargePatient(sessionId) {
+  const { data } = await api.delete(`/patients/${sessionId}`);
+  return data;
+}
+
+export async function getDoctorNotes(sessionId) {
+  const { data } = await api.get(`/patients/${sessionId}/notes`);
+  return data;
+}
+
+export async function saveDoctorNotes(sessionId, notes) {
+  const { data } = await api.post(`/patients/${sessionId}/notes`, notes);
+  return data;
+}
+
+export async function downloadReport(sessionId) {
+  const token = localStorage.getItem('token');
+  const res = await fetch(`${API_BASE}/patients/${sessionId}/report.pdf`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`PDF download failed: ${res.status}`);
+  return res.blob();
 }

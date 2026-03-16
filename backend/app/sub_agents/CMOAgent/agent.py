@@ -6,9 +6,7 @@ Final meta-reasoning, explainability & routing agent
 from google.adk.agents import LlmAgent
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
-
-
-MODEL_NAME = "gemini-2.5-flash-lite"
+from app.config import get_model
 
 
 # ─────────────────────────────────────────
@@ -84,7 +82,7 @@ class CMOVerdict(BaseModel):
 
 CMOAgent = LlmAgent(
     name="ChiefMedicalOfficer",
-    model=MODEL_NAME,
+    model=get_model(),
     instruction="""
 
 You are the Chief Medical Officer (CMO) — the final decision-maker in a

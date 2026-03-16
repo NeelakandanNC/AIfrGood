@@ -6,13 +6,10 @@ Lightweight agent. Scores relevance of departments NOT in the
 main 6-specialist council. No deep reasoning. Just scores + one-liners.
 """
 
-import os
 from google.adk.agents import LlmAgent
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
-
-
-MODEL_NAME = "gemini-2.5-flash-lite"
+from app.config import get_model
 
 
 # ============================================================
@@ -60,7 +57,7 @@ class OtherSpecialtyOutput(BaseModel):
 
 other_specialty_llm_agent = LlmAgent(
     name="OtherSpecialtyRelevance",
-    model=MODEL_NAME,
+    model=get_model(),
     instruction="""Score how relevant each of the 13 departments is for this patient.
 
 Patient data:
