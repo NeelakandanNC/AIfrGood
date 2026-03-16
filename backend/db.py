@@ -1,133 +1,188 @@
-import sqlite3
+import os
 import json
-from datetime import datetime
-
-DB_PATH = "triage.db"
+import psycopg2
+import psycopg2.extras
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    url = os.getenv("DATABASE_URL", "").strip('"').strip("'")
+    if not url:
+        raise RuntimeError("DATABASE_URL is not set")
+    return psycopg2.connect(url)
 
 
 def init_db():
-    with get_conn() as conn:
-        conn.executescript("""
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS doctors (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                id         SERIAL PRIMARY KEY,
                 username   TEXT UNIQUE NOT NULL,
                 password   TEXT NOT NULL,
                 name       TEXT NOT NULL,
-                created_at TEXT DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS patients (
-                session_id     TEXT PRIMARY KEY,
-                doctor_id      INTEGER NOT NULL REFERENCES doctors(id),
-                patient_data   TEXT NOT NULL,
-                classification TEXT,
-                verdict        TEXT,
-                status         TEXT DEFAULT 'active',
-                timestamp      TEXT NOT NULL
-            );
+                created_at TIMESTAMP DEFAULT NOW()
+            )
         """)
-        try:
-            conn.execute("ALTER TABLE patients ADD COLUMN doctor_notes TEXT")
-            conn.commit()
-        except Exception:
-            pass  # column already exists
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS patients (
+                session_id    TEXT PRIMARY KEY,
+                doctor_id     INTEGER NOT NULL REFERENCES doctors(id),
+                patient_data  TEXT NOT NULL,
+                classification TEXT,
+                verdict       TEXT,
+                status        TEXT DEFAULT 'active',
+                timestamp     TEXT NOT NULL,
+                doctor_notes  TEXT
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def create_doctor(username: str, hashed_pw: str, name: str) -> int:
-    with get_conn() as conn:
-        cur = conn.execute(
-            "INSERT INTO doctors (username, password, name) VALUES (?, ?, ?)",
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO doctors (username, password, name) VALUES (%s, %s, %s) RETURNING id",
             (username, hashed_pw, name),
         )
-        return cur.lastrowid
+        doctor_id = cur.fetchone()[0]
+        conn.commit()
+        return doctor_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
-def get_doctor_by_username(username: str):
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM doctors WHERE username = ?", (username,)
-        ).fetchone()
+def get_doctor_by_username(username: str) -> dict | None:
+    conn = get_conn()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM doctors WHERE username = %s", (username,))
+        row = cur.fetchone()
         return dict(row) if row else None
+    finally:
+        conn.close()
 
 
-def get_doctor_by_id(doctor_id: int):
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM doctors WHERE id = ?", (doctor_id,)
-        ).fetchone()
+def get_doctor_by_id(doctor_id: int) -> dict | None:
+    conn = get_conn()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM doctors WHERE id = %s", (doctor_id,))
+        row = cur.fetchone()
         return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def save_patient(session_id: str, doctor_id: int, patient_data: dict,
                  classification: dict, verdict: dict, timestamp: str):
-    with get_conn() as conn:
-        conn.execute(
-            """INSERT OR REPLACE INTO patients
-               (session_id, doctor_id, patient_data, classification, verdict, timestamp)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (
-                session_id,
-                doctor_id,
-                json.dumps(patient_data),
-                json.dumps(classification) if classification else None,
-                json.dumps(verdict) if verdict else None,
-                timestamp,
-            ),
-        )
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO patients (session_id, doctor_id, patient_data, classification, verdict, timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (session_id) DO UPDATE SET
+                classification = EXCLUDED.classification,
+                verdict        = EXCLUDED.verdict,
+                timestamp      = EXCLUDED.timestamp
+        """, (
+            session_id,
+            doctor_id,
+            json.dumps(patient_data),
+            json.dumps(classification) if classification else None,
+            json.dumps(verdict) if verdict else None,
+            timestamp,
+        ))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
-def get_patients_by_doctor(doctor_id: int):
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM patients WHERE doctor_id = ? AND status = 'active' ORDER BY timestamp DESC",
+def get_patients_by_doctor(doctor_id: int) -> list[dict]:
+    conn = get_conn()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT * FROM patients WHERE doctor_id = %s AND status = 'active' ORDER BY timestamp DESC",
             (doctor_id,),
-        ).fetchall()
-    result = []
-    for row in rows:
+        )
+        rows = cur.fetchall()
+        result = []
+        for row in rows:
+            r = dict(row)
+            r["patient_data"] = json.loads(r["patient_data"]) if r["patient_data"] else {}
+            r["classification"] = json.loads(r["classification"]) if r["classification"] else {}
+            r["verdict"] = json.loads(r["verdict"]) if r["verdict"] else {}
+            r["doctor_notes"] = json.loads(r["doctor_notes"]) if r["doctor_notes"] else None
+            result.append(r)
+        return result
+    finally:
+        conn.close()
+
+
+def get_patient_by_session(session_id: str, doctor_id: int) -> dict | None:
+    conn = get_conn()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT * FROM patients WHERE session_id = %s AND doctor_id = %s",
+            (session_id, doctor_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
         r = dict(row)
         r["patient_data"] = json.loads(r["patient_data"]) if r["patient_data"] else {}
-        r["classification"] = json.loads(r["classification"]) if r["classification"] else None
-        r["verdict"] = json.loads(r["verdict"]) if r["verdict"] else None
-        r["doctor_notes"] = json.loads(r["doctor_notes"]) if r.get("doctor_notes") else None
-        result.append(r)
-    return result
-
-
-def get_patient_by_session(session_id: str, doctor_id: int):
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM patients WHERE session_id = ? AND doctor_id = ?",
-            (session_id, doctor_id),
-        ).fetchone()
-    if not row:
-        return None
-    r = dict(row)
-    r["patient_data"]   = json.loads(r["patient_data"])   if r["patient_data"]   else {}
-    r["classification"] = json.loads(r["classification"]) if r["classification"] else None
-    r["verdict"]        = json.loads(r["verdict"])         if r["verdict"]        else None
-    r["doctor_notes"]   = json.loads(r["doctor_notes"])   if r.get("doctor_notes") else None
-    return r
+        r["classification"] = json.loads(r["classification"]) if r["classification"] else {}
+        r["verdict"] = json.loads(r["verdict"]) if r["verdict"] else {}
+        r["doctor_notes"] = json.loads(r["doctor_notes"]) if r["doctor_notes"] else None
+        return r
+    finally:
+        conn.close()
 
 
 def save_doctor_notes(session_id: str, doctor_id: int, notes: dict) -> bool:
-    with get_conn() as conn:
-        cur = conn.execute(
-            "UPDATE patients SET doctor_notes = ? WHERE session_id = ? AND doctor_id = ?",
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE patients SET doctor_notes = %s WHERE session_id = %s AND doctor_id = %s",
             (json.dumps(notes), session_id, doctor_id),
         )
-        return cur.rowcount > 0
+        updated = cur.rowcount > 0
+        conn.commit()
+        return updated
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def discharge_patient(session_id: str, doctor_id: int) -> bool:
-    with get_conn() as conn:
-        cur = conn.execute(
-            "UPDATE patients SET status = 'discharged' WHERE session_id = ? AND doctor_id = ?",
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE patients SET status = 'discharged' WHERE session_id = %s AND doctor_id = %s AND status = 'active'",
             (session_id, doctor_id),
         )
-        return cur.rowcount > 0
+        updated = cur.rowcount > 0
+        conn.commit()
+        return updated
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
