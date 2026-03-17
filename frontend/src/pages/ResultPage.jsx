@@ -116,7 +116,7 @@ export default function ResultPage() {
 
       <SafetyAlerts alerts={verdict.safety_alerts} />
 
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" scrollButtons="auto" sx={{ borderBottom: 1, borderColor: 'divider' }}>
         <Tab label="Verdict" />
         <Tab label="Workup Plan" />
         <Tab label="Council Summary" />

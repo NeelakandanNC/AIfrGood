@@ -9,9 +9,9 @@ export default function ExplanationCard({ explanation, keyFactors = [] }) {
         {keyFactors.length > 0 && (
           <Box>
             <Typography variant="caption" color="text.secondary">Key Factors</Typography>
-            <Box sx={{ mt: 0.5 }}>
+            <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
               {keyFactors.map((f, i) => (
-                <Chip key={i} label={f} size="small" variant="outlined" sx={{ mr: 0.5, mb: 0.5 }} />
+                <Chip key={i} label={f} size="small" variant="outlined" />
               ))}
             </Box>
           </Box>

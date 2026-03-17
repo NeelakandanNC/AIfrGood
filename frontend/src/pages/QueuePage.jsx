@@ -3,6 +3,7 @@ import {
   Box, Typography, Chip, Stack, ToggleButtonGroup, ToggleButton,
   FormControl, InputLabel, Select, MenuItem, FormControlLabel, Switch,
   IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, Button,
+  Card, CardContent, CardActionArea,
 } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import { ExitToApp } from '@mui/icons-material';
@@ -120,8 +121,8 @@ export default function QueuePage() {
     <Box>
       <Typography variant="h5" gutterBottom>Patient Priority Queue</Typography>
 
-      <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: 'wrap' }} alignItems="center">
-        <ToggleButtonGroup size="small" value={riskFilter} onChange={(_, v) => setRiskFilter(v)}>
+      <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap', gap: 1 }} alignItems="center">
+        <ToggleButtonGroup size="small" value={riskFilter} onChange={(_, v) => setRiskFilter(v)} sx={{ flexWrap: 'wrap' }}>
           {['Low', 'Medium', 'High', 'Critical'].map((r) => (
             <ToggleButton key={r} value={r}>{r}</ToggleButton>
           ))}
@@ -146,22 +147,67 @@ export default function QueuePage() {
           <Typography color="text.secondary">No patients triaged yet.</Typography>
         </Box>
       ) : (
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          loading={loading}
-          autoHeight
-          initialState={{
-            sorting: { sortModel: [{ field: 'priority_score', sort: 'desc' }] },
-          }}
-          pageSizeOptions={[10, 25, 50]}
-          onRowClick={handleRowClick}
-          sx={{
-            '& .MuiDataGrid-row': { cursor: 'pointer' },
-            '& .MuiDataGrid-row:hover': { bgcolor: '#F5F6FA' },
-          }}
-          disableRowSelectionOnClick
-        />
+        <>
+          {/* Mobile card list */}
+          <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+            <Stack spacing={1.5}>
+              {rows.map((row) => (
+                <Card key={row.id} variant="outlined" sx={{ borderRadius: 2 }}>
+                  <CardActionArea onClick={() => handleRowClick({ row, field: '' })}>
+                    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Typography variant="subtitle2" fontWeight={700}>{row.name}</Typography>
+                        <RiskBadge level={row.risk_level} size="small" />
+                      </Stack>
+                      <Stack direction="row" spacing={1} sx={{ mt: 0.5 }} flexWrap="wrap">
+                        <Typography variant="caption" color="text.secondary">{row.department}</Typography>
+                        <Typography variant="caption" color="text.secondary">·</Typography>
+                        <Typography variant="caption" color="text.secondary">{row.age_gender}</Typography>
+                        <Typography variant="caption" color="text.secondary">·</Typography>
+                        <Typography variant="caption" color="text.secondary">{row.timestamp}</Typography>
+                      </Stack>
+                      <Stack direction="row" spacing={1} sx={{ mt: 0.5 }} alignItems="center">
+                        <ActionChip action={row.action} />
+                        {row.alerts > 0 && <Chip label={`${row.alerts} alerts`} size="small" color="error" />}
+                        <Box sx={{ ml: 'auto' }}>
+                          <Tooltip title="Discharge patient">
+                            <IconButton
+                              size="small"
+                              color="warning"
+                              onClick={(e) => { e.stopPropagation(); setConfirmId(row.id); }}
+                            >
+                              <ExitToApp fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      </Stack>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              ))}
+            </Stack>
+          </Box>
+
+          {/* Desktop DataGrid */}
+          <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+            <DataGrid
+              rows={rows}
+              columns={columns}
+              loading={loading}
+              autoHeight
+              initialState={{
+                sorting: { sortModel: [{ field: 'priority_score', sort: 'desc' }] },
+              }}
+              pageSizeOptions={[10, 25, 50]}
+              onRowClick={handleRowClick}
+              sx={{
+                '& .MuiDataGrid-row': { cursor: 'pointer' },
+                '& .MuiDataGrid-row:hover': { bgcolor: '#F5F6FA' },
+              }}
+              disableRowSelectionOnClick
+            />
+          </Box>
+        </>
       )}
 
       <Dialog open={!!confirmId} onClose={() => setConfirmId(null)}>

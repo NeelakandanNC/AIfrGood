@@ -1,10 +1,12 @@
-import { Box, Typography, Chip, Stack } from '@mui/material';
+import { Box, Typography, Chip, Stack, useMediaQuery, useTheme } from '@mui/material';
 import RiskBadge from '../common/RiskBadge';
 import PriorityCircle from '../common/PriorityCircle';
 import ActionChip from '../common/ActionChip';
 import { RISK_COLORS } from '../../utils/constants';
 
 export default function VerdictHeader({ verdict }) {
+  const theme = useTheme();
+  const isXs = useMediaQuery(theme.breakpoints.down('sm'));
   if (!verdict) return null;
   const riskColor = RISK_COLORS[verdict.final_risk_level] || '#9E9E9E';
   const visualLevel = verdict.dashboard?.visual_priority_level;
@@ -21,7 +23,7 @@ export default function VerdictHeader({ verdict }) {
       </Box>
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} alignItems="center" sx={{ mb: 2 }}>
-        <PriorityCircle score={verdict.priority_score || 0} size={120} />
+        <PriorityCircle score={verdict.priority_score || 0} size={isXs ? 72 : 120} />
         <Box>
           <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
             <RiskBadge level={verdict.final_risk_level} size="large" />

@@ -8,7 +8,7 @@ export default function DepartmentRouting({ verdict }) {
     <Card sx={{ mb: 2 }}>
       <CardContent>
         <Typography variant="subtitle2" gutterBottom>Department Routing</Typography>
-        <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ mb: 1 }}>
           <Chip icon={<LocalHospital />} label={`Primary: ${verdict.primary_department}`} color="primary" />
           {verdict.secondary_department && (
             <Chip label={`Secondary: ${verdict.secondary_department}`} variant="outlined" />

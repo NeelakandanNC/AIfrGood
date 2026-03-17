@@ -14,14 +14,14 @@ export default function WorkupTable({ workup = [] }) {
   let lastPriority = null;
 
   return (
-    <TableContainer component={Paper} variant="outlined">
+    <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
       <Table size="small">
         <TableHead>
           <TableRow>
             <TableCell><strong>Test</strong></TableCell>
             <TableCell><strong>Priority</strong></TableCell>
             <TableCell><strong>Ordered By</strong></TableCell>
-            <TableCell><strong>Rationale</strong></TableCell>
+            <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}><strong>Rationale</strong></TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -49,7 +49,7 @@ export default function WorkupTable({ workup = [] }) {
                     ))}
                   </Box>
                 </TableCell>
-                <TableCell><Typography variant="caption">{item.rationale}</Typography></TableCell>
+                <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}><Typography variant="caption">{item.rationale}</Typography></TableCell>
               </TableRow>,
             ];
           })}

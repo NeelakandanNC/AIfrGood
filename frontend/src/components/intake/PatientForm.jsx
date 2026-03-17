@@ -98,7 +98,7 @@ export default function PatientForm() {
   };
 
   return (
-    <Paper sx={{ p: 3, borderRadius: 3 }}>
+    <Paper sx={{ p: { xs: 2, sm: 3 }, borderRadius: 3 }}>
       <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <LocalHospital color="primary" /> Patient Intake
       </Typography>
@@ -111,12 +111,12 @@ export default function PatientForm() {
           <Grid size={{ xs: 12, sm: 6 }}>
             <TextField label="Patient ID" value={form.patient_id} onChange={set('patient_id')} fullWidth />
           </Grid>
-          <Grid size={{ xs: 6, sm: 3 }}>
+          <Grid size={{ xs: 12, sm: 6 }}>
             <TextField label="Age" type="number" value={form.age} onChange={set('age')} fullWidth required inputProps={{ min: 0, max: 120 }} />
           </Grid>
-          <Grid size={{ xs: 6, sm: 9 }}>
+          <Grid size={{ xs: 12, sm: 6 }}>
             <FormLabel>Gender</FormLabel>
-            <RadioGroup row value={form.gender} onChange={set('gender')}>
+            <RadioGroup value={form.gender} onChange={set('gender')} sx={{ flexDirection: { xs: 'column', sm: 'row' } }}>
               <FormControlLabel value="Male" control={<Radio />} label="Male" />
               <FormControlLabel value="Female" control={<Radio />} label="Female" />
               <FormControlLabel value="Other" control={<Radio />} label="Other" />

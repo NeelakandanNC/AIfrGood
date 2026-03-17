@@ -56,9 +56,11 @@ export default function SpecialistCard({ specialist, delay = 0 }) {
 
         {d.claims_primary && <Chip label="Claims Primary" size="small" color="primary" sx={{ mb: 1 }} />}
 
-        <IconButton size="small" onClick={() => setExpanded(!expanded)} sx={{ float: 'right' }}>
-          {expanded ? <ExpandLess /> : <ExpandMore />}
-        </IconButton>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <IconButton size="small" onClick={() => setExpanded(!expanded)}>
+            {expanded ? <ExpandLess /> : <ExpandMore />}
+          </IconButton>
+        </Box>
 
         <Collapse in={expanded}>
           <Box sx={{ mt: 2 }}>
@@ -69,39 +71,43 @@ export default function SpecialistCard({ specialist, delay = 0 }) {
             {d.differentials?.length > 0 && (
               <Box sx={{ mb: 2 }}>
                 <Typography variant="caption" fontWeight={600}>Differentials</Typography>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Diagnosis</TableCell>
-                      <TableCell>Likelihood</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {d.differentials.map((diff, i) => (
-                      <TableRow key={i}>
-                        <TableCell>{diff.diagnosis || diff.condition}</TableCell>
-                        <TableCell>{diff.likelihood || diff.probability}</TableCell>
+                <Box sx={{ overflowX: 'auto' }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Diagnosis</TableCell>
+                        <TableCell>Likelihood</TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHead>
+                    <TableBody>
+                      {d.differentials.map((diff, i) => (
+                        <TableRow key={i}>
+                          <TableCell>{diff.diagnosis || diff.condition}</TableCell>
+                          <TableCell>{diff.likelihood || diff.probability}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Box>
               </Box>
             )}
 
             {d.recommended_workup?.length > 0 && (
               <Box>
                 <Typography variant="caption" fontWeight={600}>Recommended Workup</Typography>
-                <Table size="small">
-                  <TableBody>
-                    {d.recommended_workup.map((w, i) => (
-                      <TableRow key={i}>
-                        <TableCell>{w.test}</TableCell>
-                        <TableCell><PriorityBadge priority={w.priority} /></TableCell>
-                        <TableCell><Typography variant="body2">{w.rationale}</Typography></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <Box sx={{ overflowX: 'auto' }}>
+                  <Table size="small">
+                    <TableBody>
+                      {d.recommended_workup.map((w, i) => (
+                        <TableRow key={i}>
+                          <TableCell>{w.test}</TableCell>
+                          <TableCell><PriorityBadge priority={w.priority} /></TableCell>
+                          <TableCell><Typography variant="body2">{w.rationale}</Typography></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Box>
               </Box>
             )}
           </Box>

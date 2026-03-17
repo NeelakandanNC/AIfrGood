@@ -22,15 +22,15 @@ export default function CouncilSummary({ verdict }) {
           />
         </Stack>
 
-        <TableContainer>
+        <TableContainer sx={{ overflowX: 'auto' }}>
           <Table size="small">
             <TableHead>
               <TableRow>
                 <TableCell>Specialty</TableCell>
                 <TableCell>Relevance</TableCell>
-                <TableCell>Urgency</TableCell>
+                <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Urgency</TableCell>
                 <TableCell>Confidence</TableCell>
-                <TableCell>Summary</TableCell>
+                <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Summary</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -41,9 +41,9 @@ export default function CouncilSummary({ verdict }) {
                     {s.claims_primary && <Chip label="Primary" size="small" color="primary" sx={{ ml: 0.5 }} />}
                   </TableCell>
                   <TableCell>{s.relevance_score}/10</TableCell>
-                  <TableCell>{s.urgency_score}/10</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{s.urgency_score}/10</TableCell>
                   <TableCell>{s.confidence}</TableCell>
-                  <TableCell sx={{ whiteSpace: 'normal', minWidth: 200 }}>
+                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' }, whiteSpace: 'normal' }}>
                     <Typography variant="caption">{s.one_liner}</Typography>
                   </TableCell>
                 </TableRow>
