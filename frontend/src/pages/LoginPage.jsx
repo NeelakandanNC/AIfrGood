@@ -7,6 +7,8 @@ import { LocalHospital } from '@mui/icons-material';
 import axios from 'axios';
 import useTriageStore from '../state/triageStore';
 
+const API_BASE = (import.meta.env.VITE_API_URL || '') + '/api';
+
 export default function LoginPage() {
   const [tab, setTab] = useState(0); // 0=login, 1=register
   const [form, setForm] = useState({ username: '', password: '', name: '' });
@@ -23,12 +25,12 @@ export default function LoginPage() {
     setLoading(true);
     try {
       if (tab === 1) {
-        await axios.post('/api/auth/register', form);
+        await axios.post(`${API_BASE}/auth/register`, form);
         setTab(0);
         setForm({ ...form, name: '' });
         return;
       }
-      const { data } = await axios.post('/api/auth/login', {
+      const { data } = await axios.post(`${API_BASE}/auth/login`, {
         username: form.username,
         password: form.password,
       });
