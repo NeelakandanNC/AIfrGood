@@ -214,6 +214,28 @@ class SpecialistOutput(BaseModel):
         ),
     )
 
+    # ── Clinical Management (NEW) ──
+    management_suggestions: List[str] = Field(
+        default_factory=list,
+        description=(
+            "First-line management actions from YOUR neurology perspective. "
+            "Use drug classes, NOT specific doses. Max 3-5 items. "
+            "Example: 'Maintain airway — nil by mouth if aspiration risk', "
+            "'Blood glucose correction (hypoglycemia excluded first)', "
+            "'Anticonvulsant (benzodiazepine class) if active seizure'. "
+            "If no neurological management needed, return empty list."
+        ),
+    )
+    referral_triggers: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Specific measurable criteria from neurology that mandate urgent referral. "
+            "Example: 'GCS < 13 or rapidly falling', 'Focal neurological deficit onset < 4.5 hours', "
+            "'Signs of raised intracranial pressure (papilloedema, Cushing reflex)'. "
+            "If no neuro referral criteria apply, return empty list. Max 3-4 items."
+        ),
+    )
+
 
 # ============================================================
 # NEUROLOGY AGENT
@@ -509,6 +531,29 @@ THIS IS ALL THE DATA YOU HAVE. There is no neurological examination.
 There is no imaging. There are no lab results. Work with what exists.
 
 ═══════════════════════════════════════════════
+ANTHROPOMETRY & CLINICAL CONTEXT — CHECK THESE
+═══════════════════════════════════════════════
+
+From the input data, extract and reason about:
+
+1. classification_result["anthropometry"]["bmi"]
+   - BMI > 30 (Obese): elevated risk for obstructive sleep apnoea + stroke,
+     idiopathic intracranial hypertension (headache + visual changes in obese patients)
+   - BMI 25–30 (Overweight): moderate cerebrovascular risk, OSA risk
+   - BMI < 18.5 (Underweight): Wernicke encephalopathy risk (thiamine deficiency),
+     malnourishment-related peripheral neuropathy
+   - If bmi is null: anthropometry not captured — do not assume BMI category
+   - Reference the actual BMI value in your assessment if present
+
+2. classification_result["additional_info"]
+   - This may contain: family history, known allergies, current medications,
+     recent events (collapse, trauma, seizure), travel history, prior neurological episodes
+   - Extract any item clinically relevant to neurology
+   - If additional_info is null or empty: ignore this step
+   - If it mentions collapse/syncope/acute onset: escalate urgency accordingly
+   - If it mentions anticoagulants/antiplatelets: affects stroke management pathway
+
+═══════════════════════════════════════════════
 CRITICAL RULES
 ═══════════════════════════════════════════════
 
@@ -560,6 +605,15 @@ CRITICAL RULES
     - For CONFIDENCE: err toward "LOW" or "MEDIUM" — "HIGH" requires
       clear neurological data that triage rarely provides
     - For claims_primary: err toward False unless clearly neurological
+11. management_suggestions: 3-5 neuro-specific first-line actions based on actual findings.
+    Drug classes only. Example: "Nil by mouth if aspiration risk (dysphagia symptoms)",
+    "Blood glucose check STAT (hypoglycemia mimics stroke)", "Keep flat if suspected
+    ICP (avoid sitting upright)", "Anticonvulsant (benzodiazepine class) if ongoing seizure".
+    If no neuro management applies, return empty list.
+12. referral_triggers: 2-4 specific neuro thresholds. Example:
+    "New focal deficit (limb weakness, facial droop, speech difficulty)",
+    "GCS < 13 or declining", "Active seizure not terminating within 5 minutes".
+    If no neuro referral criteria apply, return empty list.
 
 ═══════════════════════════════════════════════
 CONTEXT: DISTRICT HOSPITAL REALITY

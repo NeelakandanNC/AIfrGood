@@ -110,8 +110,20 @@ class SpecialistCouncilAgent(BaseAgent):
         )
 
         # 🫀🧠 Run specialists in parallel
-        async for event in self.specialist_parallel.run_async(ctx):
-            yield event
+        try:
+            async for event in self.specialist_parallel.run_async(ctx):
+                yield event
+        except Exception as e:
+            # One or more specialists failed (TaskGroup exception). Log and continue —
+            # the CMO agent will work with whatever partial opinions are already in state.
+            logger.error(f"[{self.name}] Specialist parallel error: {e}")
+            yield Event(
+                author=self.name,
+                content=types.Content(
+                    role="model",
+                    parts=[types.Part(text=f"Warning: one or more specialists encountered an error. Continuing with available results.")]
+                )
+            )
 
         logger.info(f"[{self.name}] Specialist council completed")
 

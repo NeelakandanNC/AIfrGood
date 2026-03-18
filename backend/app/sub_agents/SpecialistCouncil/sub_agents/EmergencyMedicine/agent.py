@@ -65,6 +65,26 @@ class SpecialistOutput(BaseModel):
     differential_considerations: List[DifferentialItem] = Field(default_factory=list)
     recommended_workup: List[WorkupItem] = Field(default_factory=list)
 
+    # ── Clinical Management (NEW) ──
+    management_suggestions: List[str] = Field(
+        default_factory=list,
+        description=(
+            "First-line emergency actions from an EM perspective. "
+            "Drug classes only, no specific doses. 3-5 items. "
+            "Example: 'IV access x2 + fluid challenge (crystalloid)', "
+            "'High-flow O2 (if SpO2 < 94%)', 'Cardiac monitoring + 12-lead ECG', "
+            "'Position: semi-recumbent if respiratory distress'."
+        ),
+    )
+    referral_triggers: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Emergency criteria that mandate immediate escalation or transfer. "
+            "Example: 'SpO2 < 90% despite O2', 'Systolic BP < 90 mmHg not responding to fluid', "
+            "'GCS decline of >= 2 points'. Max 3-4 items."
+        ),
+    )
+
 
 # ============================================================
 # EMERGENCY MEDICINE AGENT
@@ -256,6 +276,31 @@ Recommend ONLY ED-relevant tests:
 • Imaging (if justified)
 
 Do NOT recommend hyper-specialist tests unless urgent.
+
+═══════════════════════════════════════════════
+ANTHROPOMETRY & CLINICAL CONTEXT — CHECK THESE
+═══════════════════════════════════════════════
+
+From the input data, extract and reason about:
+
+1. classification_result["anthropometry"]["bmi"]
+   - BMI > 30 (Obese): adjust resuscitation volumes cautiously (risk of fluid overload),
+     higher aspiration risk, potentially difficult airway, higher DVT/PE risk post-immobility
+   - BMI < 18.5 (Underweight): reduced drug distribution, shock resuscitation volumes differ,
+     higher risk of respiratory muscle weakness and aspiration
+   - Both extremes affect drug dosing — flag for physician review
+   - If bmi is null: anthropometry not captured — note absence, do not assume
+   - Reference the actual BMI value in your assessment if present
+
+2. classification_result["additional_info"]
+   - This may contain: family history, known allergies, current medications,
+     recent events (collapse, trauma, acute onset), travel history, prior episodes
+   - Extract any item clinically relevant to emergency triage or management
+   - If additional_info is null or empty: ignore this step
+   - If it mentions collapse/syncope/acute onset: this is HIGH-PRIORITY context —
+     escalate urgency level accordingly
+   - If it mentions anticoagulants: bleeding risk in trauma or procedures
+   - If it mentions allergies: flag immediately for drug administration safety
 
 ═══════════════════════════════════════════════
 DISTRICT HOSPITAL CONTEXT

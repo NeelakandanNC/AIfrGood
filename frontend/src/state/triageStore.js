@@ -14,6 +14,7 @@ const useTriageStore = create((set) => ({
   // Auth state
   token: localStorage.getItem('token') || null,
   doctor: JSON.parse(localStorage.getItem('doctor') || 'null'),
+  facilityLevel: JSON.parse(localStorage.getItem('doctor') || 'null')?.facility_level || 'District Hospital',
 
   setClassification: (c) => set({ classification: c }),
   addSpecialist: (s) =>
@@ -31,8 +32,10 @@ const useTriageStore = create((set) => ({
   setAuth: (token, doctor) => {
     localStorage.setItem('token', token);
     localStorage.setItem('doctor', JSON.stringify(doctor));
-    set({ token, doctor });
+    set({ token, doctor, facilityLevel: doctor?.facility_level || 'District Hospital' });
   },
+
+  setFacilityLevel: (level) => set({ facilityLevel: level }),
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('doctor');

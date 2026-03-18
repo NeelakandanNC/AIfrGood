@@ -104,11 +104,20 @@ class ClassificationAgentImpl(BaseAgent):
     # BUILD MODEL INPUT
     # ============================================================
 
+    @staticmethod
+    def _normalize(s: str) -> str:
+        """Lowercase and replace spaces/hyphens with underscores for model key matching."""
+        return s.lower().replace(" ", "_").replace("-", "_")
+
     def _build_model_input(self, user_input: dict) -> pd.DataFrame:
 
-        symptoms = user_input.get("symptoms", [])
-        conditions = user_input.get("conditions", [])
+        raw_symptoms = user_input.get("symptoms", [])
+        raw_conditions = user_input.get("conditions", [])
         gender_str = user_input.get("gender", "Male")
+
+        # Normalize to underscore format so "chest pain" matches "chest_pain"
+        symptoms = [self._normalize(s) for s in raw_symptoms]
+        conditions = [self._normalize(c) for c in raw_conditions]
 
         row = {
             "age": user_input["age"],
@@ -128,8 +137,8 @@ class ClassificationAgentImpl(BaseAgent):
             row[f"condition_{c}"] = int(c in conditions)
 
         row["has_pre_existing"] = int(len(conditions) > 0)
-        row["num_symptoms"] = len(symptoms)
-        row["num_conditions"] = len(conditions)
+        row["num_symptoms"] = len(raw_symptoms)
+        row["num_conditions"] = len(raw_conditions)
 
         return pd.DataFrame([row])
 
@@ -261,10 +270,11 @@ class ClassificationAgentImpl(BaseAgent):
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
 
-        user_input = ctx.session.state.get("raw_data")
+        # raw_data is IngestAgent's structured output; fall back to user_input if it failed
+        user_input = ctx.session.state.get("raw_data") or ctx.session.state.get("user_input")
 
         if not user_input:
-            print("\n❌ ERROR: user_input missing in session state\n")
+            print("\n❌ ERROR: raw_data and user_input both missing in session state\n")
             return
 
         if not self._model or not self._label_encoder:
@@ -307,6 +317,12 @@ class ClassificationAgentImpl(BaseAgent):
                 "temperature": user_input.get("temperature"),
                 "spo2": user_input.get("spo2"),
             },
+            "anthropometry": {
+                "weight_kg": user_input.get("weight_kg"),
+                "height_cm": user_input.get("height_cm"),
+                "bmi": user_input.get("bmi"),
+            },
+            "additional_info": user_input.get("additional_info"),
             "prediction": prediction,
             "derived_metrics": derived_metrics,
         }

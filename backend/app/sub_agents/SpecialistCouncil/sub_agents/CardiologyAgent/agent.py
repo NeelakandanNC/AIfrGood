@@ -202,6 +202,28 @@ class SpecialistOutput(BaseModel):
         ),
     )
 
+    # ── Clinical Management (NEW) ──
+    management_suggestions: List[str] = Field(
+        default_factory=list,
+        description=(
+            "First-line management actions from YOUR specialty's perspective. "
+            "Use drug classes, NOT specific doses. Max 3-5 items. "
+            "Example: 'IV fluid resuscitation (crystalloid)', "
+            "'Antiplatelet therapy (aspirin class) if ACS not ruled out', "
+            "'12-lead ECG immediately'. Frame as suggestions, not prescriptions."
+        ),
+    )
+    referral_triggers: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Specific measurable criteria from YOUR specialty domain that should trigger "
+            "urgent referral or escalation. Be precise. "
+            "Example: 'ST elevation on ECG', 'Troponin positive', "
+            "'BP > 180/120 with end-organ symptoms', 'SpO2 < 90% on O2'. "
+            "Max 3-4 items."
+        ),
+    )
+
 
 # ============================================================
 # CARDIOLOGY AGENT
@@ -352,6 +374,29 @@ From session state, you receive a classification_result dict containing:
 You also receive the raw SHAP values when available.
 
 ═══════════════════════════════════════════════
+ANTHROPOMETRY & CLINICAL CONTEXT — CHECK THESE
+═══════════════════════════════════════════════
+
+From the input data, extract and reason about:
+
+1. classification_result["anthropometry"]["bmi"]
+   - BMI > 30 (Obese): elevated risk for metabolic syndrome, obesity cardiomyopathy,
+     sleep apnoea + AF risk, increased perioperative cardiac risk
+   - BMI 25–30 (Overweight): moderate metabolic risk, early insulin resistance pattern
+   - BMI < 18.5 (Underweight): cardiac cachexia — may signal advanced HF or malignancy
+   - If bmi is null: anthropometry not captured — note absence, do not assume
+   - Reference the actual BMI value in your assessment if present
+
+2. classification_result["additional_info"]
+   - This may contain: family history, known allergies, current medications,
+     recent events (collapse, trauma), travel history, prior cardiac episodes
+   - Extract any item clinically relevant to cardiology
+   - If additional_info is null or empty: ignore this step
+   - If it mentions collapse/syncope/acute onset: escalate urgency accordingly
+   - If it mentions current medications: consider drug effects on cardiac function
+     (e.g., beta-blockers masking tachycardia, diuretics causing electrolyte issues)
+
+═══════════════════════════════════════════════
 CRITICAL RULES
 ═══════════════════════════════════════════════
 
@@ -374,6 +419,13 @@ CRITICAL RULES
    needs cardiac evaluation as the PRIMARY concern. Do not over-claim.
 10. Do NOT soften your language for politeness. Be direct. Be clinical.
     A missed MI kills. A false alarm does not.
+11. management_suggestions: 3-5 cardiac-specific first-line actions. Drug class only, no doses.
+    Example: "12-lead ECG immediately", "IV access + cardiac monitoring",
+    "Antiplatelet (aspirin class) if ACS not excluded",
+    "IV nitrate (if no hypotension) for hypertensive emergency".
+12. referral_triggers: 2-4 specific cardiac thresholds that mandate escalation.
+    Example: "ST elevation or new LBBB on ECG", "Troponin positive on serial testing",
+    "Cardiogenic shock (BP < 90 systolic + cold peripheries)", "Complete heart block".
 
 ═══════════════════════════════════════════════
 CONTEXT: DISTRICT HOSPITAL REALITY

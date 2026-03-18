@@ -213,6 +213,28 @@ class SpecialistOutput(BaseModel):
         ),
     )
 
+    # ── Clinical Management (NEW) ──
+    management_suggestions: List[str] = Field(
+        default_factory=list,
+        description=(
+            "First-line respiratory management from a Pulmonology perspective. "
+            "Drug classes only, no specific doses. 3-5 items. "
+            "Example: 'Supplemental O2 (target SpO2 >= 94%)', "
+            "'Bronchodilator (salbutamol class) nebulization if wheeze/bronchospasm', "
+            "'Head-end elevation 30-45 degrees if respiratory distress'. "
+            "If no respiratory management needed, return empty list."
+        ),
+    )
+    referral_triggers: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Specific respiratory criteria that mandate urgent referral or escalation. "
+            "Example: 'SpO2 < 90% on 4L O2', 'RR > 30/min with accessory muscle use', "
+            "'Hemoptysis > 200mL', 'PEFR < 33% predicted in severe asthma'. "
+            "If no pulmonary referral criteria apply, return empty list. Max 3-4 items."
+        ),
+    )
+
 
 # ============================================================
 # PULMONOLOGY AGENT
@@ -535,6 +557,30 @@ You also receive the raw SHAP values when available.
 THIS IS ALL THE DATA YOU HAVE. There is no auscultation. There is
 no chest X-ray. There is no ABG. There is no respiratory rate.
 SpO2 is your MOST VALUABLE data point. Use it wisely.
+
+═══════════════════════════════════════════════
+ANTHROPOMETRY & CLINICAL CONTEXT — CHECK THESE
+═══════════════════════════════════════════════
+
+From the input data, extract and reason about:
+
+1. classification_result["anthropometry"]["bmi"]
+   - BMI > 30 (Obese): elevated risk for obstructive sleep apnoea (OSA),
+     obesity hypoventilation syndrome, reduced functional residual capacity (FRC),
+     increased work of breathing — SpO2 borderline values carry MORE significance
+   - BMI 25–30 (Overweight): moderate OSA risk, reduced respiratory reserve
+   - BMI < 18.5 (Underweight): respiratory muscle weakness, emphysema-pattern lung disease,
+     higher susceptibility to TB and atypical infections
+   - If bmi is null: anthropometry not captured — do not assume BMI category
+   - Reference the actual BMI value in your SpO2 interpretation if present
+
+2. classification_result["additional_info"]
+   - This may contain: family history, known allergies, current medications,
+     recent events (collapse, trauma), travel history, prior respiratory episodes
+   - Extract any item clinically relevant to pulmonology
+   - If additional_info is null or empty: ignore this step
+   - If it mentions collapse/acute onset: consider PE, severe bronchospasm, acute hypoxia
+   - If it mentions inhaler use or bronchodilators: indicates known airway disease
 
 ═══════════════════════════════════════════════
 CRITICAL RULES

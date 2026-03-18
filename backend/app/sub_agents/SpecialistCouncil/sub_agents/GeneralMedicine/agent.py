@@ -213,6 +213,26 @@ class SpecialistOutput(BaseModel):
         ),
     )
 
+    # ── Clinical Management (NEW) ──
+    management_suggestions: List[str] = Field(
+        default_factory=list,
+        description=(
+            "First-line management from a General Medicine perspective. "
+            "Drug classes only, no specific doses. 3-5 items. "
+            "Example: 'IV access and fluid assessment', 'Blood glucose monitoring hourly', "
+            "'Sepsis screen (blood cultures before antibiotics)', "
+            "'Empirical antibiotics (broad-spectrum) if sepsis suspected'."
+        ),
+    )
+    referral_triggers: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Specific criteria from General Medicine that mandate escalation. "
+            "Example: 'qSOFA score >= 2 (sepsis)', 'Blood glucose < 3 mmol/L unresponsive to treatment', "
+            "'Temperature > 40°C with rigors and hemodynamic compromise'. Max 3-4 items."
+        ),
+    )
+
 
 # ============================================================
 # GENERAL MEDICINE AGENT
@@ -540,6 +560,31 @@ You also receive the raw SHAP values when available.
 THIS IS ALL THE DATA YOU HAVE. There are no lab results. There is
 no medication list. There is no examination. Work with what exists
 and flag what needs to be obtained.
+
+═══════════════════════════════════════════════
+ANTHROPOMETRY & CLINICAL CONTEXT — CHECK THESE
+═══════════════════════════════════════════════
+
+From the input data, extract and reason about:
+
+1. classification_result["anthropometry"]["bmi"]
+   - BMI > 30 (Obese): elevated risk for NAFLD, T2DM cluster, hypertension, metabolic
+     syndrome — if diabetes and hypertension already present, obesity is an independent
+     risk escalation factor, not merely a background finding
+   - BMI 25–30 (Overweight): early metabolic risk, insulin resistance
+   - BMI < 18.5 (Underweight): malnutrition, TB reactivation risk, pressure sores,
+     poor wound healing, immunosuppression — treat as a clinical RED FLAG in Indian context
+   - If bmi is null: anthropometry not captured — note absence, do not assume
+   - Reference the actual BMI value in your assessment if present
+
+2. classification_result["additional_info"]
+   - This may contain: family history, known allergies, current medications,
+     recent events (collapse, trauma), travel history, prior episodes, social history
+   - Extract ANY item clinically relevant to general medicine or multi-system assessment
+   - If additional_info is null or empty: ignore this step
+   - If it mentions collapse/acute onset: flag as urgent context
+   - If it mentions medications: reason about side effects and interactions
+   - If it mentions allergies: flag in facility_requirements context
 
 ═══════════════════════════════════════════════
 CRITICAL RULES

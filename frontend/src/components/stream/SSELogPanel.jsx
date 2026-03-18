@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dialog, DialogContent, Box, Typography, Button, LinearProgress, Chip,
 } from '@mui/material';
@@ -31,24 +31,27 @@ const PHASE_LABELS = {
 };
 
 export default function SSELogPanel() {
-  const { streamEvents, phase, isTriaging } = useTriageStore();
+  const { streamEvents, phase, isTriaging, setPhase } = useTriageStore();
   const navigate = useNavigate();
   const bottomRef = useRef(null);
+  const [dismissed, setDismissed] = useState(false);
 
-  const isOpen  = isTriaging || phase === 'complete' || phase === 'error';
+  const isOpen  = !dismissed && (isTriaging || phase === 'complete' || phase === 'error');
   const isDone  = phase === 'complete';
   const isError = phase === 'error';
+
+  const handleClose = () => {
+    setDismissed(true);
+  };
+
+  useEffect(() => {
+    setDismissed(false);
+  }, [isTriaging]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [streamEvents]);
 
-  useEffect(() => {
-    if (isDone) {
-      const t = setTimeout(() => navigate('/result'), 2000);
-      return () => clearTimeout(t);
-    }
-  }, [isDone, navigate]);
 
   return (
     <Dialog
@@ -145,9 +148,14 @@ export default function SSELogPanel() {
           <Box sx={{ px: 3, py: 2, borderTop: '1px solid #21262D', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
             {isDone && (
               <>
-                <Typography sx={{ color: '#8B949E', fontSize: 12 }}>
-                  Redirecting automatically...
-                </Typography>
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={handleClose}
+                  sx={{ color: '#8B949E', '&:hover': { color: '#C9D1D9', bgcolor: 'transparent' }, fontWeight: 600, fontSize: 13 }}
+                >
+                  Close
+                </Button>
                 <Button
                   variant="contained"
                   size="small"
@@ -159,14 +167,24 @@ export default function SSELogPanel() {
               </>
             )}
             {isError && (
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => window.location.reload()}
-                sx={{ borderColor: '#F85149', color: '#F85149', '&:hover': { borderColor: '#FF7B72', color: '#FF7B72', bgcolor: 'transparent' } }}
-              >
-                Dismiss
-              </Button>
+              <>
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={handleClose}
+                  sx={{ color: '#8B949E', '&:hover': { color: '#C9D1D9', bgcolor: 'transparent' }, fontWeight: 600, fontSize: 13 }}
+                >
+                  Close
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => window.location.reload()}
+                  sx={{ borderColor: '#F85149', color: '#F85149', '&:hover': { borderColor: '#FF7B72', color: '#FF7B72', bgcolor: 'transparent' } }}
+                >
+                  Retry
+                </Button>
+              </>
             )}
           </Box>
         )}

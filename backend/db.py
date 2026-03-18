@@ -17,12 +17,17 @@ def init_db():
         cur = conn.cursor()
         cur.execute("""
             CREATE TABLE IF NOT EXISTS doctors (
-                id         SERIAL PRIMARY KEY,
-                username   TEXT UNIQUE NOT NULL,
-                password   TEXT NOT NULL,
-                name       TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT NOW()
+                id             SERIAL PRIMARY KEY,
+                username       TEXT UNIQUE NOT NULL,
+                password       TEXT NOT NULL,
+                name           TEXT NOT NULL,
+                facility_level TEXT DEFAULT 'District Hospital',
+                created_at     TIMESTAMP DEFAULT NOW()
             )
+        """)
+        # Add facility_level to existing tables (safe migration)
+        cur.execute("""
+            ALTER TABLE doctors ADD COLUMN IF NOT EXISTS facility_level TEXT DEFAULT 'District Hospital'
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS patients (
@@ -33,25 +38,47 @@ def init_db():
                 verdict       TEXT,
                 status        TEXT DEFAULT 'active',
                 timestamp     TEXT NOT NULL,
-                doctor_notes  TEXT
+                doctor_notes  TEXT,
+                in_time       TEXT
             )
+        """)
+        cur.execute("""
+            ALTER TABLE patients ADD COLUMN IF NOT EXISTS in_time TEXT
         """)
         conn.commit()
     finally:
         conn.close()
 
 
-def create_doctor(username: str, hashed_pw: str, name: str) -> int:
+def create_doctor(username: str, hashed_pw: str, name: str, facility_level: str = "District Hospital") -> int:
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO doctors (username, password, name) VALUES (%s, %s, %s) RETURNING id",
-            (username, hashed_pw, name),
+            "INSERT INTO doctors (username, password, name, facility_level) VALUES (%s, %s, %s, %s) RETURNING id",
+            (username, hashed_pw, name, facility_level),
         )
         doctor_id = cur.fetchone()[0]
         conn.commit()
         return doctor_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def update_facility_level(doctor_id: int, facility_level: str) -> bool:
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE doctors SET facility_level = %s WHERE id = %s",
+            (facility_level, doctor_id),
+        )
+        updated = cur.rowcount > 0
+        conn.commit()
+        return updated
     except Exception:
         conn.rollback()
         raise
@@ -82,17 +109,18 @@ def get_doctor_by_id(doctor_id: int) -> dict | None:
 
 
 def save_patient(session_id: str, doctor_id: int, patient_data: dict,
-                 classification: dict, verdict: dict, timestamp: str):
+                 classification: dict, verdict: dict, timestamp: str, in_time: str = None):
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO patients (session_id, doctor_id, patient_data, classification, verdict, timestamp)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO patients (session_id, doctor_id, patient_data, classification, verdict, timestamp, in_time)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (session_id) DO UPDATE SET
                 classification = EXCLUDED.classification,
                 verdict        = EXCLUDED.verdict,
-                timestamp      = EXCLUDED.timestamp
+                timestamp      = EXCLUDED.timestamp,
+                in_time        = EXCLUDED.in_time
         """, (
             session_id,
             doctor_id,
@@ -100,6 +128,7 @@ def save_patient(session_id: str, doctor_id: int, patient_data: dict,
             json.dumps(classification) if classification else None,
             json.dumps(verdict) if verdict else None,
             timestamp,
+            in_time,
         ))
         conn.commit()
     except Exception:

@@ -89,12 +89,21 @@ class PatientData(BaseModel):
     temperature: float  # Celsius from frontend
     spo2: int
     conditions: List[str]
+    facility_level: Optional[str] = "District Hospital"  # Level 1 PHC / District Hospital / Tertiary Medical College
+    weight_kg: Optional[float] = None
+    height_cm: Optional[float] = None
+    additional_info: Optional[str] = None
 
 
 class RegisterRequest(BaseModel):
     username: str
     password: str
     name: str
+    facility_level: Optional[str] = "District Hospital"
+
+
+class FacilityUpdateRequest(BaseModel):
+    facility_level: str
 
 
 class LoginRequest(BaseModel):
@@ -118,7 +127,7 @@ async def register(req: RegisterRequest):
     if existing:
         raise HTTPException(status_code=400, detail="Username already taken")
     hashed = hash_password(req.password)
-    doctor_id = db.create_doctor(req.username, hashed, req.name)
+    doctor_id = db.create_doctor(req.username, hashed, req.name, req.facility_level or "District Hospital")
     return {"message": "Doctor registered", "doctor_id": doctor_id}
 
 
@@ -130,8 +139,22 @@ async def login(req: LoginRequest):
     token = create_token(doctor["id"])
     return {
         "access_token": token,
-        "doctor": {"id": doctor["id"], "name": doctor["name"], "username": doctor["username"]},
+        "doctor": {
+            "id": doctor["id"],
+            "name": doctor["name"],
+            "username": doctor["username"],
+            "facility_level": doctor.get("facility_level", "District Hospital"),
+        },
     }
+
+
+@app.put("/api/auth/facility")
+async def update_facility(req: FacilityUpdateRequest, doctor_id: int = Depends(get_current_doctor)):
+    valid_levels = ["Level 1 PHC", "District Hospital", "Tertiary Medical College"]
+    if req.facility_level not in valid_levels:
+        raise HTTPException(status_code=400, detail=f"facility_level must be one of: {valid_levels}")
+    db.update_facility_level(doctor_id, req.facility_level)
+    return {"message": "Facility level updated", "facility_level": req.facility_level}
 
 
 # ─────────────────────────────────────────
@@ -176,6 +199,8 @@ def compute_specialist_summaries(state: Dict) -> List[Dict]:
                 "claims_primary": opinion.get("claims_primary", False),
                 "assessment": opinion.get("assessment", ""),
             })
+    # Sort: primary claimant first, then by relevance desc, urgency as tiebreaker desc
+    summaries.sort(key=lambda s: (s["claims_primary"], s["relevance_score"], s["urgency_score"]), reverse=True)
     return summaries
 
 
@@ -230,20 +255,94 @@ def compute_safety_alerts(state: Dict) -> List[Dict]:
 
 
 def compute_priority_score(classification_result: Dict, state: Dict) -> int:
-    max_urgency = 0
-    max_relevance = 0
+    score, _ = _compute_priority_score_with_breakdown(classification_result, state)
+    return score
+
+
+def _compute_priority_score_with_breakdown(classification_result: Dict, state: Dict):
+    """
+    Evidence-based priority scoring rubric (max 100).
+
+    Components grounded in NEWS2, ESI, MOHFW P1-P4, and NICE NG51:
+      1. CMO Recommended Action  — 35 pts  (clinical synthesis, equiv. to ESI/MTS category)
+      2. RED_FLAG count          — 25 pts  (NICE: ≥3 flags = NEWS2 ≥7 severity)
+      3. Referral Urgency        — 20 pts  (MOHFW P1–P3 time windows)
+      4. ML Risk Level + Adjust  — 12 pts  (ML has highest AUROC; override = clinical gestalt)
+      5. Council Consensus       — 5 pts   (Split = unknown presentation = higher risk)
+      6. YELLOW_FLAG count       — 3 pts   (small amplifier for borderline multi-system concern)
+    """
+    breakdown = {}
+
+    # ── 1. CMO Recommended Action (max 35) ───────────────────────────────────
+    cmo = _to_dict(state.get("cmo_verdict")) or {}
+    action_pts = {"Immediate": 35, "Urgent": 24, "Standard": 12, "Can Wait": 3}
+    action = cmo.get("recommended_action", "Standard")
+    pts_action = action_pts.get(action, 12)
+    breakdown["cmo_action"] = {"value": action, "points": pts_action, "max": 35}
+
+    # ── 2. RED_FLAG count across all specialists (max 25) ────────────────────
+    red_count = 0
     for key, _ in SPECIALIST_KEYS:
         opinion = _to_dict(state.get(key))
-        if opinion:
-            max_urgency = max(max_urgency, opinion.get("urgency_score", 0))
-            max_relevance = max(max_relevance, opinion.get("relevance_score", 0))
+        if not opinion:
+            continue
+        for flag in opinion.get("flags", []):
+            if isinstance(flag, dict) and flag.get("severity") == "RED_FLAG":
+                red_count += 1
+    red_pts_map = {0: 0, 1: 8, 2: 16}
+    pts_red = red_pts_map.get(red_count, 25)  # 3+ → 25
+    breakdown["red_flags"] = {"value": red_count, "points": pts_red, "max": 25}
 
-    risk_base = {"Low": 20, "Medium": 50, "High": 80}
+    # ── 3. Referral Urgency (max 20) ─────────────────────────────────────────
+    urgency_pts = {"IMMEDIATE": 20, "WITHIN_1HR": 13, "WITHIN_4HRS": 6, "ELECTIVE": 0}
+    referral_urgency = cmo.get("referral_urgency", "ELECTIVE")
+    pts_urgency = urgency_pts.get(str(referral_urgency), 0)
+    breakdown["referral_urgency"] = {"value": referral_urgency, "points": pts_urgency, "max": 20}
+
+    # ── 4. ML Risk Level + CMO Override (max 12) ─────────────────────────────
     prediction = classification_result.get("prediction", {}) if isinstance(classification_result, dict) else {}
-    risk_level = prediction.get("risk_level", "Medium")
+    ml_risk = prediction.get("risk_level", "Medium")
+    risk_adjusted = bool(cmo.get("risk_adjusted", False))
+    ml_base = {"High": 9, "Medium": 4, "Low": 0}
+    pts_ml = ml_base.get(ml_risk, 4) + (4 if risk_adjusted else 0)
+    pts_ml = min(pts_ml, 12)
+    breakdown["ml_risk"] = {"value": f"{ml_risk}{'+ adjusted' if risk_adjusted else ''}", "points": pts_ml, "max": 12}
 
-    score = (max_urgency * 0.4 + max_relevance * 0.3) * 10 + risk_base.get(risk_level, 50) * 0.3
-    return min(100, max(1, int(score)))
+    # ── 5. Council Consensus (max 5) ─────────────────────────────────────────
+    consensus_pts = {"Split": 5, "Majority": 2, "Unanimous": 0}
+    consensus = cmo.get("council_consensus", "Unanimous")
+    pts_consensus = consensus_pts.get(str(consensus), 0)
+    breakdown["council_consensus"] = {"value": consensus, "points": pts_consensus, "max": 5}
+
+    # ── 6. YELLOW_FLAG count (max 3) ─────────────────────────────────────────
+    yellow_count = 0
+    for key, _ in SPECIALIST_KEYS:
+        opinion = _to_dict(state.get(key))
+        if not opinion:
+            continue
+        for flag in opinion.get("flags", []):
+            if isinstance(flag, dict) and flag.get("severity") == "YELLOW_FLAG":
+                yellow_count += 1
+    yellow_pts = 3 if yellow_count >= 4 else (1 if yellow_count >= 2 else 0)
+    breakdown["yellow_flags"] = {"value": yellow_count, "points": yellow_pts, "max": 3}
+
+    total = pts_action + pts_red + pts_urgency + pts_ml + pts_consensus + yellow_pts
+    total = min(100, max(1, total))
+
+    # MOHFW priority label
+    if total >= 75:
+        label = "P1 — Immediate"
+    elif total >= 50:
+        label = "P2 — Urgent"
+    elif total >= 25:
+        label = "P3 — Semi-Urgent"
+    else:
+        label = "P4 — Non-Urgent"
+
+    breakdown["total"] = total
+    breakdown["label"] = label
+
+    return total, breakdown
 
 
 def compute_council_consensus(state: Dict, cmo_verdict: Dict) -> str:
@@ -324,6 +423,9 @@ def enrich_verdict(state: Dict) -> Dict:
     cmo = _to_dict(state.get("cmo_verdict")) or {}
     classification = _to_dict(state.get("classification_result")) or {}
 
+    # Carry facility_level into the enriched verdict for frontend use
+    cmo["facility_level"] = state.get("facility_level", "District Hospital")
+
     # Store full specialist opinions so they survive DB round-trips
     full_opinions = []
     for key, name in SPECIALIST_KEYS:
@@ -340,7 +442,9 @@ def enrich_verdict(state: Dict) -> Dict:
     cmo["specialist_summaries"] = compute_specialist_summaries(state)
     cmo["consolidated_workup"] = compute_consolidated_workup(state)
     cmo["safety_alerts"] = compute_safety_alerts(state)
-    cmo["priority_score"] = compute_priority_score(classification, state)
+    priority_score, priority_breakdown = _compute_priority_score_with_breakdown(classification, state)
+    cmo["priority_score"] = priority_score
+    cmo["priority_breakdown"] = priority_breakdown
     cmo["council_consensus"] = compute_council_consensus(state, cmo)
     cmo["dissenting_opinions"] = compute_dissenting_opinions(state, cmo)
     cmo["key_factors"] = compute_key_factors(state, cmo)
@@ -408,14 +512,24 @@ async def start_triage(patient: PatientData, doctor_id: int = Depends(get_curren
     patient_dict = patient.model_dump()
     patient_dict["temperature"] = celsius_to_fahrenheit(patient.temperature)
 
-    initial_state = {"user_input": patient_dict}
+    # Compute BMI if weight and height provided
+    if patient.weight_kg and patient.height_cm and patient.height_cm > 0:
+        h_m = patient.height_cm / 100
+        patient_dict["bmi"] = round(patient.weight_kg / (h_m ** 2), 1)
+
+    initial_state = {
+        "user_input": patient_dict,
+        "facility_level": patient.facility_level or "District Hospital",
+    }
 
     await ensure_session(user_id, session_id, initial_state)
 
+    in_time = datetime.now().isoformat()
     active_sessions[session_id] = {
         "user_id": user_id,
         "doctor_id": doctor_id,
         "patient_data": patient.model_dump(),  # Keep original Celsius for frontend
+        "in_time": in_time,
         "status": "pending",
     }
 
@@ -503,6 +617,7 @@ async def stream_triage(session_id: str, token: Optional[str] = None, doctor_id:
                 classification=classification,
                 verdict=enriched,
                 timestamp=timestamp,
+                in_time=session_info.get("in_time"),
             )
             active_sessions[session_id]["status"] = "completed"
 
@@ -630,6 +745,7 @@ async def download_report(session_id: str, doctor_id: int = Depends(get_current_
         classification=patient["classification"] or {},
         verdict=patient["verdict"] or {},
         doctor_notes=patient["doctor_notes"],
+        in_time=patient.get("in_time"),
     )
     name = (patient["patient_data"].get("name") or "patient").replace(" ", "_")
     filename = f"triage_{name}_{session_id[:8]}.pdf"

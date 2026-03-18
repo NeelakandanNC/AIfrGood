@@ -54,6 +54,8 @@ export function connectSSE(sessionId, handlers) {
     'error',
   ];
 
+  let closed = false;
+
   events.forEach((evt) => {
     es.addEventListener(evt, (e) => {
       try {
@@ -62,11 +64,18 @@ export function connectSSE(sessionId, handlers) {
       } catch {
         handlers[evt]?.(e.data);
       }
+      // Close after terminal events so es.onerror doesn't fire a redundant error
+      if (evt === 'error' || evt === 'complete') {
+        closed = true;
+        es.close();
+      }
     });
   });
 
   es.onerror = () => {
-    handlers.error?.({ message: 'SSE connection lost' });
+    if (!closed) {
+      handlers.error?.({ message: 'SSE connection lost' });
+    }
     es.close();
   };
 
@@ -112,4 +121,9 @@ export async function downloadReport(sessionId) {
   });
   if (!res.ok) throw new Error(`PDF download failed: ${res.status}`);
   return res.blob();
+}
+
+export async function updateFacilityLevel(facilityLevel) {
+  const { data } = await api.put('/auth/facility', { facility_level: facilityLevel });
+  return data;
 }

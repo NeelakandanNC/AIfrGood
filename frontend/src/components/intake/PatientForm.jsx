@@ -1,17 +1,19 @@
 import { useState } from 'react';
 import {
   Box, TextField, Button, Grid, RadioGroup, FormControlLabel, Radio,
-  FormLabel, Autocomplete, Chip, Typography, Paper,
+  FormLabel, Autocomplete, Chip, Typography, Paper, Select, MenuItem, InputLabel, FormControl,
 } from '@mui/material';
 import { LocalHospital } from '@mui/icons-material';
+
+const FACILITY_LEVELS = ['Level 1 PHC', 'District Hospital', 'Tertiary Medical College'];
 import { SYMPTOM_LIST, CONDITION_LIST } from '../../utils/constants';
 import useTriageStore from '../../state/triageStore';
 import { startTriage, connectSSE } from '../../api/triageApi';
 
 function generateId() {
   const yr = new Date().getFullYear();
-  const num = String(Math.floor(Math.random() * 99999)).padStart(5, '0');
-  return `PT-${yr}-${num}`;
+  const uid = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
+  return `PT-${yr}-${uid}`;
 }
 
 export default function PatientForm() {
@@ -27,9 +29,29 @@ export default function PatientForm() {
     heart_rate: '',
     temperature: '',
     spo2: '',
+    weight_kg: '',
+    height_cm: '',
     symptoms: [],
     conditions: [],
+    facility_level: 'District Hospital',
+    additional_info: '',
   });
+
+  const bmi = (() => {
+    const w = parseFloat(form.weight_kg);
+    const h = parseFloat(form.height_cm);
+    if (!w || !h || h <= 0) return null;
+    const val = w / Math.pow(h / 100, 2);
+    return Math.round(val * 10) / 10;
+  })();
+
+  const bmiCategory = (b) => {
+    if (b === null) return '';
+    if (b < 18.5) return 'Underweight';
+    if (b < 25) return 'Normal';
+    if (b < 30) return 'Overweight';
+    return 'Obese';
+  };
 
   const set = (field) => (e, val) => {
     if (val !== undefined) setForm((f) => ({ ...f, [field]: val }));
@@ -51,6 +73,9 @@ export default function PatientForm() {
       heart_rate: Number(form.heart_rate),
       temperature: Number(form.temperature),
       spo2: Number(form.spo2),
+      weight_kg: form.weight_kg ? Number(form.weight_kg) : null,
+      height_cm: form.height_cm ? Number(form.height_cm) : null,
+      additional_info: form.additional_info || null,
     };
 
     try {
@@ -141,6 +166,19 @@ export default function PatientForm() {
           <Grid size={{ xs: 6, sm: 4 }}>
             <TextField label="SpO2 (%)" type="number" value={form.spo2} onChange={set('spo2')} fullWidth />
           </Grid>
+          <Grid size={{ xs: 6, sm: 4 }}>
+            <TextField label="Weight (kg)" type="number" value={form.weight_kg} onChange={set('weight_kg')} fullWidth inputProps={{ step: 0.1, min: 1 }} />
+          </Grid>
+          <Grid size={{ xs: 6, sm: 4 }}>
+            <TextField label="Height (cm)" type="number" value={form.height_cm} onChange={set('height_cm')} fullWidth inputProps={{ step: 0.1, min: 1 }} />
+          </Grid>
+          {bmi !== null && (
+            <Grid size={12}>
+              <Typography variant="body2" sx={{ color: bmi >= 30 || bmi < 18.5 ? 'warning.main' : 'success.main', fontWeight: 500 }}>
+                BMI: {bmi} — {bmiCategory(bmi)}
+              </Typography>
+            </Grid>
+          )}
 
           <Grid size={12}>
             <Autocomplete
@@ -166,6 +204,33 @@ export default function PatientForm() {
                 return <Chip key={key} label={v} size="small" {...tagProps} />;
               })}
               renderInput={(params) => <TextField {...params} label="Pre-existing Conditions" placeholder="Select conditions" />}
+            />
+          </Grid>
+
+          <Grid size={12}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Facility Level</InputLabel>
+              <Select
+                value={form.facility_level}
+                label="Facility Level"
+                onChange={(e) => setForm((f) => ({ ...f, facility_level: e.target.value }))}
+              >
+                {FACILITY_LEVELS.map((lvl) => (
+                  <MenuItem key={lvl} value={lvl}>{lvl}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          <Grid size={12}>
+            <TextField
+              label="Additional Clinical Information (Optional)"
+              placeholder="Family history, known allergies, current medications, recent travel, other relevant context..."
+              value={form.additional_info}
+              onChange={set('additional_info')}
+              fullWidth
+              multiline
+              rows={3}
             />
           </Grid>
 
